@@ -1,4 +1,6 @@
 import api from './api';
+import axios from 'axios';
+import { API_URL } from '../constants/api';
 
 const authService = {
   login: async (userData) => {
@@ -92,6 +94,29 @@ const authService = {
       throw new Error(error.response?.data?.message || 'Failed to update profile');
     }
   },
+
+  logout: () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+  },
+
+  getToken: () => {
+    return localStorage.getItem('token');
+  },
+
+  fetchUserDetails: async (userId) => {
+    try {
+      const response = await axios.get(`${API_URL}/users/${userId}`, {
+        headers: {
+          Authorization: `Bearer ${authService.getToken()}`
+        }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching user details:', error);
+      throw error;
+    }
+  }
 };
 
 export default authService;

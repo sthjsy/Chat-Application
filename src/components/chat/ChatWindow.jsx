@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSocket } from '../../contexts/SocketContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { FaSearch, FaUserCircle, FaPaperclip, FaSmile, FaPaperPlane, FaTimes, FaUsers, FaCog } from 'react-icons/fa';
+import { FaSearch, FaUserCircle, FaPaperclip, FaSmile, FaPaperPlane, FaTimes, FaUsers, FaCog, FaEllipsisV, FaEnvelope, FaPhone, FaMapMarkerAlt, FaClock } from 'react-icons/fa';
 import axios from 'axios';
 import EmojiPicker from 'emoji-picker-react';
 import Message from './Message';
@@ -12,6 +12,7 @@ import '../../styles/chat.css';
 import chatService from '../../services/chatService';
 import { MessageType } from '../../constants/messageTypes';
 import { format, isSameDay } from 'date-fns';
+import authService from '../../services/authService';
 
 const ChatWindow = () => {
   const { currentUser } = useAuth();
@@ -61,6 +62,9 @@ const ChatWindow = () => {
   const [userDetails, setUserDetails] = useState(null);
   const [loadingUserDetails, setLoadingUserDetails] = useState(false);
   const headerRef = useRef(null);
+  const [showSearch, setShowSearch] = useState(false);
+  const [showUserDetails, setShowUserDetails] = useState(false);
+  const [showGroupInfo, setShowGroupInfo] = useState(false);
 
   // Single effect to handle chatId updates
   useEffect(() => {
@@ -446,10 +450,8 @@ const ChatWindow = () => {
 
       setLoadingUserDetails(true);
       try {
-        const response = await axios.get(`http://localhost:8082/api/users/${otherParticipant.id}`, {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-        });
-        setUserDetails(response.data);
+        const userDetails = await authService.fetchUserDetails(otherParticipant.id);
+        setUserDetails(userDetails);
       } catch (error) {
         console.error('Error fetching user details:', error);
         setUserDetails(null);
@@ -600,12 +602,49 @@ const ChatWindow = () => {
         <>
         
         {/* Current chat header */}
-          <div 
-            className="chat-header d-flex align-items-center justify-content-between py-2 px-3 border-bottom"
-          >
+          <div className="chat-header d-flex align-items-center justify-content-between">
             <div className="d-flex align-items-center">
               <div className="position-relative me-2">
-                <FaUserCircle size={32} />
+                <div className="user-avatar-wrapper">
+                  <FaUserCircle size={32} className="user-avatar" />
+                  <div className="user-avatar-hover">
+                    <div className="user-avatar-hover-content">
+                      <div className="user-header">
+                        <FaUserCircle size={48} />
+                        <div className="user-info">
+                          <h6>{getChatName()}</h6>
+                          {currentChat.chatType === 'PRIVATE' && (
+                            <span className="username">@{getChatUsername()}</span>
+                          )}
+                          <div className="status">
+                            <span className="status-dot" style={{ backgroundColor: getStatusColor() }}></span>
+                            {getStatusText()}
+                          </div>
+                        </div>
+                      </div>
+                      {currentChat.chatType === 'PRIVATE' && userDetails && (
+                        <div className="user-details">
+                          <div>
+                            <FaEnvelope />
+                            <span>{userDetails.email}</span>
+                          </div>
+                          <div>
+                            <FaPhone />
+                            <span>{userDetails.phone || 'Not available'}</span>
+                          </div>
+                          <div>
+                            <FaMapMarkerAlt />
+                            <span>{userDetails.location || 'Location not set'}</span>
+                          </div>
+                          <div>
+                            <FaClock />
+                            <span>Member since {new Date(userDetails.createdAt).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
                 <span
                   className="position-absolute bottom-0 end-0 rounded-circle"
                   style={{ width: "10px", height: "10px", backgroundColor: getStatusColor() }}
@@ -624,51 +663,79 @@ const ChatWindow = () => {
               </div>
             </div>
             
-            {/* Call buttons */}
-            {currentChat.chatType === 'PRIVATE' && (
-              <div className="d-flex gap-2">
-                <button 
-                  className="btn btn-light btn-sm rounded-circle p-2"
-                  title="Audio Call"
-                  onClick={() => console.log('Start audio call')}
-                >
-                  <FiPhone size={16} />
-                </button>
-                <button 
-                  className="btn btn-light btn-sm rounded-circle p-2"
-                  title="Video Call"
-                  onClick={() => console.log('Start video call')}
-                >
-                  <FiVideo size={16} />
-                </button>
-              </div>
-            )}
+            <div className="d-flex align-items-center">
+              {/* Call buttons */}
+              {currentChat.chatType === 'PRIVATE' && (
+                <div className="d-flex gap-2">
+                  <button 
+                    className="btn btn-light btn-sm rounded-circle p-2"
+                    title="Audio Call"
+                    onClick={() => console.log('Start audio call')}
+                  >
+                    <FiPhone size={16} />
+                  </button>
+                  <button 
+                    className="btn btn-light btn-sm rounded-circle p-2"
+                    title="Video Call"
+                    onClick={() => console.log('Start video call')}
+                  >
+                    <FiVideo size={16} />
+                  </button>
+                </div>
+              )}
 
-            {/* Header Dropdown */}
-            {showHeaderDropdown && (
-              <div className="chat-header-dropdown">
-                <div className="dropdown-item" onClick={() => setShowSearch(true)}>
-                  <FiSearch className="me-2" /> Search Messages
-                </div>
-                <div className="dropdown-item" onClick={() => setShowUserDetails(true)}>
-                  <FiUser className="me-2" /> View Profile
-                </div>
-                {currentChat?.chatType === 'GROUP' && (
-                  <>
-                    <div className="dropdown-item">
-                      <FiSettings className="me-2" /> Group Settings
+              {/* Three dot menu */}
+              <div className="position-relative">
+                <button 
+                  className="btn btn-light btn-sm rounded-circle p-2"
+                  onClick={() => setShowHeaderDropdown(!showHeaderDropdown)}
+                  title="Chat options"
+                >
+                  <FaEllipsisV size={16} />
+                </button>
+
+                {/* Dropdown menu */}
+                {showHeaderDropdown && (
+                  <div className="chat-header-dropdown">
+                    <div className="dropdown-item" onClick={() => {
+                      setShowSearch(true);
+                      setShowHeaderDropdown(false);
+                    }}>
+                      <FaSearch className="me-2" /> Search Messages
                     </div>
-                    <div className="dropdown-item">
-                      <FaUsers className="me-2" /> Group Info
+                    <div className="dropdown-item" onClick={() => {
+                      setShowUserDetails(true);
+                      setShowHeaderDropdown(false);
+                    }}>
+                      <FaUserCircle className="me-2" /> View Profile
                     </div>
-                  </>
+                    {currentChat?.chatType === 'GROUP' && (
+                      <>
+                        <div className="dropdown-item" onClick={() => {
+                          setShowGroupSettings(true);
+                          setShowHeaderDropdown(false);
+                        }}>
+                          <FaCog className="me-2" /> Group Settings
+                        </div>
+                        <div className="dropdown-item" onClick={() => {
+                          setShowGroupInfo(true);
+                          setShowHeaderDropdown(false);
+                        }}>
+                          <FaUsers className="me-2" /> Group Info
+                        </div>
+                      </>
+                    )}
+                    <div className="dropdown-divider" />
+                    <div className="dropdown-item text-danger" onClick={() => {
+                      // Handle leave chat
+                      setShowHeaderDropdown(false);
+                    }}>
+                      <FiLogOut className="me-2" /> Leave Chat
+                    </div>
+                  </div>
                 )}
-                <div className="dropdown-divider" />
-                <div className="dropdown-item text-danger">
-                  <FiLogOut className="me-2" /> Leave Chat
-                </div>
               </div>
-            )}
+            </div>
           </div>
 
           {/* Messages Area - Scrollable */}
@@ -814,6 +881,56 @@ const ChatWindow = () => {
           <div className="text-center text-muted">
             <FaUserCircle size={48} className="mb-3" />
             <h5>Select a chat to start messaging</h5>
+          </div>
+        </div>
+      )}
+
+      {/* Search Modal */}
+      {showSearch && (
+        <div className="search-modal" onClick={() => setShowSearch(false)}>
+          <div className="search-modal-content" onClick={e => e.stopPropagation()}>
+            <div className="search-modal-header">
+              <h5>Search Messages</h5>
+              <button className="close-button" onClick={() => setShowSearch(false)}>
+                <FaTimes />
+              </button>
+            </div>
+            <div className="search-modal-body">
+              <div className="search-input-wrapper">
+                <FaSearch />
+                <input
+                  type="text"
+                  placeholder="Search messages..."
+                  value={searchQuery}
+                  onChange={(e) => handleSearch(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div className="search-results">
+                {searchResults.map((message) => (
+                  <div
+                    key={message.id}
+                    className="search-result-item"
+                    onClick={() => {
+                      scrollToMessage(message.id);
+                      setShowSearch(false);
+                    }}
+                  >
+                    <div className="message-content">{message.content}</div>
+                    <div className="message-meta">
+                      <span>{message.senderName}</span>
+                      <span>•</span>
+                      <span>{format(new Date(message.timestamp), 'MMM d, yyyy h:mm a')}</span>
+                    </div>
+                  </div>
+                ))}
+                {searchQuery && searchResults.length === 0 && (
+                  <div className="text-center text-muted py-4">
+                    No messages found
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}

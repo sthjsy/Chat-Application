@@ -72,38 +72,13 @@ const Chat = () => {
 
   // Handle user search
   const handleSearch = async (query) => {
-    setSearchQuery(query);
-    setShowSearchResults(true);
-    setSelectedIndex(-1);
-    setError(null);
-
-    // Debounced search to prevent too many API calls
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
+    try {
+      const searchResults = await chatService.handleSearch(query);
+      setSearchResults(searchResults);
+    } catch (error) {
+      console.error('Error searching chats:', error);
+      setError('Failed to search chats');
     }
-
-    searchTimeoutRef.current = setTimeout(async () => {
-      if (!query.trim()) {
-        setSearchResults([]);
-        return;
-      }
-
-      setIsSearching(true);
-      try {
-        console.log('Searching users with query:', query);
-        const response = await axios.get(`http://localhost:8082/api/users/search/${query}`, {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-        });
-        console.log('Search results:', response.data);
-        setSearchResults(response.data);
-      } catch (err) {
-        console.error('Error searching users:', err);
-        setError('Failed to search users. Please try again.');
-        setSearchResults([]);
-      } finally {
-        setIsSearching(false);
-      }
-    }, 300);
   };
 
   // Handle user selection from search

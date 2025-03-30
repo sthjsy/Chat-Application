@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useChat } from '../../contexts/ChatContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { websocketService } from '../../services/websocketService';
+import { useSocket } from '../../contexts/SocketContext';
 import ChatItem from './ChatItem';
 import { FiSearch, FiPlus, FiFilter } from 'react-icons/fi';
 import { Form, InputGroup } from 'react-bootstrap';
@@ -19,105 +19,79 @@ const ChatList = () => {
     setChats
   } = useChat();
   const { currentUser } = useAuth();
+  const { subscribe, unsubscribe, connected } = useSocket();
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilter, setShowFilter] = useState(false);
   const scrollRef = useRef(null);
 
-  // Set up WebSocket event handlers
   useEffect(() => {
-    if (!currentUser) return;
+    if (!connected || !currentUser?.id) return;
 
-    // Handle new messages
-    websocketService.onNewMessage((message) => {
-      console.log('ChatList received message:', message);
-      
-      // Update the chat's last message and move it to top
-      setChats(prev => {
-        const updatedChats = prev.map(chat => 
-          chat.id === message.chatId
-            ? {
-                ...chat,
-                lastMessage: message.content,
-                lastMessageTime: message.createdAt,
-                updatedAt: message.createdAt,
-                unreadCount: chat.id === currentChat?.id ? 0 : (chat.unreadCount || 0) + 1
-              }
-            : chat
-        );
+    console.log('Setting up chat list message subscription');
 
-        // Find the updated chat
-        const updatedChat = updatedChats.find(chat => chat.id === message.chatId);
+    // Subscribe to user-specific messages for all chats
+    const messageSubscription = subscribe(`/user/${currentUser.id}/queue/messages`, (message) => {
+      try {
+        const messageData = JSON.parse(message.body);
+        console.log('ChatList received message:', messageData);
         
-        // Move the updated chat to the top
-        if (updatedChat) {
-          const filteredChats = updatedChats.filter(chat => chat.id !== message.chatId);
-          return [updatedChat, ...filteredChats];
+        // Update the chat's last message
+        updateChatLastMessage(messageData.chatId, {
+          content: messageData.content,
+          timestamp: messageData.timestamp,
+          senderId: messageData.senderId
+        });
+
+        // If this is a new chat, add it to the list
+        if (!chats.some(chat => chat.id === messageData.chatId)) {
+          chatService.getChat(messageData.chatId)
+            .then(newChat => {
+              if (newChat) {
+                setChats(prev => [newChat, ...prev]);
+              }
+            })
+            .catch(error => {
+              console.error('Error fetching new chat:', error);
+            });
         }
-
-        return updatedChats;
-      });
-
-      // If this is a new chat, add it to the list
-      if (!chats.some(chat => chat.id === message.chatId)) {
-        chatService.getChat(message.chatId)
-          .then(newChat => {
-            if (newChat) {
-              setChats(prev => [newChat, ...prev]);
-            }
-          })
-          .catch(error => {
-            console.error('Error fetching new chat:', error);
-          });
+      } catch (error) {
+        console.error('Error handling message in ChatList:', error);
       }
     });
 
-    // Handle new chats
-    websocketService.onNewChat((chat) => {
-      console.log('ChatList received new chat:', chat);
-      setChats(prev => [chat, ...prev]);
-    });
-
-    // Handle chat updates
-    websocketService.onChatUpdate((updatedChat) => {
-      console.log('ChatList received chat update:', updatedChat);
-      setChats(prev => {
-        const updatedChats = prev.map(chat => 
-          chat.id === updatedChat.id ? updatedChat : chat
-        );
-        const updatedChatFound = updatedChats.find(chat => chat.id === updatedChat.id);
-        if (updatedChatFound) {
-          const filteredChats = updatedChats.filter(chat => chat.id !== updatedChat.id);
-          return [updatedChatFound, ...filteredChats];
+    // Subscribe to chat events
+    const chatEventSubscription = subscribe(`/user/${currentUser.id}/queue/chat.events`, (event) => {
+      try {
+        const eventData = JSON.parse(event.body);
+        console.log('ChatList received chat event:', eventData);
+        
+        if (eventData.type === 'NEW_CHAT') {
+          // Add new chat to the top of the list
+          setChats(prev => [eventData.chat, ...prev]);
+        } else if (eventData.type === 'CHAT_UPDATE') {
+          // Update existing chat and move it to the top
+          setChats(prev => {
+            const updatedChats = prev.map(chat => 
+              chat.id === eventData.chat.id ? eventData.chat : chat
+            );
+            const updatedChat = updatedChats.find(chat => chat.id === eventData.chat.id);
+            if (updatedChat) {
+              const filteredChats = updatedChats.filter(chat => chat.id !== eventData.chat.id);
+              return [updatedChat, ...filteredChats];
+            }
+            return updatedChats;
+          });
         }
-        return updatedChats;
-      });
-    });
-
-    // Handle user status changes
-    websocketService.onUserStatusChange((userId, status) => {
-      console.log('ChatList received user status change:', { userId, status });
-      // Update user status in the chat list
-      setChats(prev => prev.map(chat => {
-        if (chat.participants?.some(p => p.id === userId)) {
-          return {
-            ...chat,
-            participants: chat.participants.map(p => 
-              p.id === userId ? { ...p, status } : p
-            )
-          };
-        }
-        return chat;
-      }));
+      } catch (error) {
+        console.error('Error handling chat event in ChatList:', error);
+      }
     });
 
     return () => {
-      // Clean up WebSocket handlers
-      websocketService.onNewMessage(null);
-      websocketService.onNewChat(null);
-      websocketService.onChatUpdate(null);
-      websocketService.onUserStatusChange(null);
+      if (messageSubscription) unsubscribe(messageSubscription);
+      if (chatEventSubscription) unsubscribe(chatEventSubscription);
     };
-  }, [currentUser, currentChat, chats]);
+  }, [connected, currentUser, subscribe, unsubscribe, updateChatLastMessage, chats, setChats]);
 
   const handleScroll = () => {
     if (scrollRef.current) {

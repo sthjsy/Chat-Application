@@ -73,9 +73,13 @@ const ChatItem = ({ chat, isSelected, onClick, userStatus }) => {
 
   const getLastMessageSender = () => {
     if (!chat?.lastMessageSender) return '';
+    
+    // If the sender is the current user
     if (chat.lastMessageSender === currentUser.fullName) return 'You';
     
-    return chat.lastMessageSender;
+    // Split the name into words and get the first word (first name)
+    const nameParts = chat.lastMessageSender.split(' ');
+    return nameParts[0];
   };
 
   const getMessageStatus = () => {

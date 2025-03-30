@@ -1,150 +1,217 @@
-import SockJS from 'sockjs-client';
-import { Stomp } from '@stomp/stompjs';
 import { WebSocketConfig } from '../utils/websocketConfig';
+import { Client } from '@stomp/stompjs';
 
 class WebSocketService {
     constructor() {
-        this.stompClient = null;
-        this.currentUser = null;
+        this.client = null;
+        this.subscriptions = new Map();
         this.messageHandlers = new Map();
-        this.chatEventHandlers = new Map();
+        this.connected = false;
     }
 
-    connect(currentUser) {
-        this.currentUser = currentUser;
-        const socket = new SockJS(WebSocketConfig.WS_URL);
-        this.stompClient = Stomp.over(socket);
-        
-        this.stompClient.connect({}, (frame) => {
-            console.log('Connected to WebSocket:', frame);
-            
-            // Subscribe to user-specific messages
-            this.stompClient.subscribe(
-                WebSocketConfig.QUEUES.USER_MESSAGES(this.currentUser.id),
-                (message) => {
-                    const messageData = JSON.parse(message.body);
-                    this.handleNewMessage(messageData);
-                }
-            );
+    connect(userId) {
+        if (this.connected) return;
 
-            // Subscribe to chat events
-            this.stompClient.subscribe(
-                WebSocketConfig.QUEUES.USER_CHAT_EVENTS(this.currentUser.id),
-                (event) => {
-                    const eventData = JSON.parse(event.body);
-                    this.handleChatEvent(eventData);
-                }
-            );
+        this.client = new Client({
+            brokerURL: WebSocketConfig.WS_URL,
+            connectHeaders: {
+                'userId': userId
+            },
+            debug: (str) => {
+                console.log('STOMP Debug:', str);
+            },
+            reconnectDelay: 5000,
+            heartbeatIncoming: 4000,
+            heartbeatOutgoing: 4000
+        });
 
-            // Subscribe to errors
-            this.stompClient.subscribe(
-                WebSocketConfig.QUEUES.USER_ERRORS(this.currentUser.id),
-                (error) => {
-                    console.error('WebSocket error:', error.body);
-                }
-            );
+        this.client.onConnect = () => {
+            console.log('Connected to WebSocket');
+            this.connected = true;
+            this.subscribeToUserTopics(userId);
+        };
+
+        this.client.onStompError = (frame) => {
+            console.error('STOMP Error:', frame);
+            this.connected = false;
+        };
+
+        this.client.onWebSocketClose = () => {
+            console.log('WebSocket connection closed');
+            this.connected = false;
+        };
+
+        this.client.activate();
+    }
+
+    subscribeToUserTopics(userId) {
+        // Subscribe to user-specific message queue
+        const messageQueue = WebSocketConfig.getUserMessageQueue(userId);
+        this.subscribe(messageQueue, (message) => {
+            const event = JSON.parse(message.body);
+            this.handleMessageEvent(event);
+        });
+
+        // Subscribe to user-specific chat events queue
+        const chatEventsQueue = WebSocketConfig.getUserChatEventsQueue(userId);
+        this.subscribe(chatEventsQueue, (message) => {
+            const event = JSON.parse(message.body);
+            this.handleChatEvent(event);
+        });
+
+        // Subscribe to user-specific errors queue
+        const errorsQueue = WebSocketConfig.getUserErrorsQueue(userId);
+        this.subscribe(errorsQueue, (message) => {
+            console.error('WebSocket Error:', message.body);
         });
     }
 
-    disconnect() {
-        if (this.stompClient) {
-            this.stompClient.disconnect();
-            this.stompClient = null;
+    subscribeToChat(chatId) {
+        const chatTopic = WebSocketConfig.getChatTopic(chatId);
+        this.subscribe(chatTopic, (message) => {
+            const event = JSON.parse(message.body);
+            this.handleMessageEvent(event);
+        });
+
+        const typingTopic = WebSocketConfig.getChatTypingTopic(chatId);
+        this.subscribe(typingTopic, (message) => {
+            const event = JSON.parse(message.body);
+            this.handleTypingEvent(event);
+        });
+    }
+
+    subscribe(destination, callback) {
+        if (!this.connected) return;
+
+        const subscription = this.client.subscribe(destination, callback);
+        this.subscriptions.set(destination, subscription);
+    }
+
+    unsubscribe(destination) {
+        const subscription = this.subscriptions.get(destination);
+        if (subscription) {
+            subscription.unsubscribe();
+            this.subscriptions.delete(destination);
         }
     }
 
-    // Message handlers
-    onNewMessage(handler) {
-        this.messageHandlers.set('new', handler);
+    handleMessageEvent(event) {
+        const { type, data } = event;
+        switch (type) {
+            case WebSocketConfig.EVENT_TYPES.NEW_MESSAGE:
+                this.notifyHandlers('newMessage', data);
+                break;
+            case WebSocketConfig.EVENT_TYPES.MESSAGE_UPDATED:
+                this.notifyHandlers('messageUpdated', data);
+                break;
+            case WebSocketConfig.EVENT_TYPES.MESSAGE_DELETED:
+                this.notifyHandlers('messageDeleted', data);
+                break;
+        }
     }
 
-    onMessageUpdate(handler) {
-        this.messageHandlers.set('update', handler);
+    handleChatEvent(event) {
+        const { type, data } = event;
+        switch (type) {
+            case WebSocketConfig.EVENT_TYPES.NEW_CHAT:
+                this.notifyHandlers('newChat', data);
+                break;
+            case WebSocketConfig.EVENT_TYPES.USER_STATUS_CHANGED:
+                this.notifyHandlers('userStatusChanged', data);
+                break;
+        }
     }
 
-    onMessageDelete(handler) {
-        this.messageHandlers.set('delete', handler);
+    handleTypingEvent(event) {
+        const { type, data } = event;
+        switch (type) {
+            case WebSocketConfig.EVENT_TYPES.TYPING_STARTED:
+                this.notifyHandlers('typingStarted', data);
+                break;
+            case WebSocketConfig.EVENT_TYPES.TYPING_STOPPED:
+                this.notifyHandlers('typingStopped', data);
+                break;
+        }
     }
 
-    // Chat event handlers
-    onNewChat(handler) {
-        this.chatEventHandlers.set('new', handler);
-    }
+    sendMessage(chatId, message) {
+        if (!this.connected) return;
 
-    onChatUpdate(handler) {
-        this.chatEventHandlers.set('update', handler);
-    }
-
-    onUserStatusChange(handler) {
-        this.chatEventHandlers.set('status', handler);
-    }
-
-    // Send methods
-    sendMessage(chatId, content) {
-        if (!this.stompClient) return;
-        this.stompClient.send(WebSocketConfig.ENDPOINTS.SEND_MESSAGE, {}, JSON.stringify({
-            chatId,
-            content,
-            messageType: 'TEXT'
-        }));
+        this.client.publish({
+            destination: WebSocketConfig.ENDPOINTS.SEND_MESSAGE,
+            body: JSON.stringify({
+                chatId,
+                content: message.content,
+                type: message.type,
+                senderId: message.senderId
+            })
+        });
     }
 
     updateMessage(chatId, messageId, content) {
-        if (!this.stompClient) return;
-        this.stompClient.send(WebSocketConfig.ENDPOINTS.UPDATE_MESSAGE, {}, JSON.stringify({
-            chatId,
-            messageId,
-            content
-        }));
+        if (!this.connected) return;
+
+        this.client.publish({
+            destination: WebSocketConfig.ENDPOINTS.UPDATE_MESSAGE,
+            body: JSON.stringify({
+                chatId,
+                messageId,
+                content
+            })
+        });
     }
 
     deleteMessage(chatId, messageId) {
-        if (!this.stompClient) return;
-        this.stompClient.send(WebSocketConfig.ENDPOINTS.DELETE_MESSAGE, {}, JSON.stringify({
-            chatId,
-            messageId
-        }));
+        if (!this.connected) return;
+
+        this.client.publish({
+            destination: WebSocketConfig.ENDPOINTS.DELETE_MESSAGE,
+            body: JSON.stringify({
+                chatId,
+                messageId
+            })
+        });
     }
 
-    sendTypingStatus(chatId, isTyping) {
-        if (!this.stompClient) return;
-        this.stompClient.send(
-            WebSocketConfig.getTypingEndpoint(chatId),
-            {},
-            JSON.stringify(isTyping)
-        );
+    sendTypingStatus(chatId, userId, isTyping) {
+        if (!this.connected) return;
+
+        this.client.publish({
+            destination: WebSocketConfig.getTypingEndpoint(chatId),
+            body: JSON.stringify({
+                userId,
+                isTyping
+            })
+        });
     }
 
-    // Event handlers
-    handleNewMessage(messageData) {
-        const handler = this.messageHandlers.get('new');
-        if (handler) {
-            handler(messageData);
+    on(event, handler) {
+        if (!this.messageHandlers.has(event)) {
+            this.messageHandlers.set(event, new Set());
+        }
+        this.messageHandlers.get(event).add(handler);
+    }
+
+    off(event, handler) {
+        const handlers = this.messageHandlers.get(event);
+        if (handlers) {
+            handlers.delete(handler);
         }
     }
 
-    handleChatEvent(eventData) {
-        switch (eventData.type) {
-            case WebSocketConfig.EVENT_TYPES.NEW_MESSAGE:
-                const newMessageHandler = this.messageHandlers.get('new');
-                if (newMessageHandler) newMessageHandler(eventData.message);
-                break;
-            case WebSocketConfig.EVENT_TYPES.MESSAGE_UPDATED:
-                const updateHandler = this.messageHandlers.get('update');
-                if (updateHandler) updateHandler(eventData.message);
-                break;
-            case WebSocketConfig.EVENT_TYPES.MESSAGE_DELETED:
-                const deleteHandler = this.messageHandlers.get('delete');
-                if (deleteHandler) deleteHandler(eventData.messageId);
-                break;
-            case WebSocketConfig.EVENT_TYPES.NEW_CHAT:
-                const newChatHandler = this.chatEventHandlers.get('new');
-                if (newChatHandler) newChatHandler(eventData.chat);
-                break;
-            case WebSocketConfig.EVENT_TYPES.USER_STATUS_CHANGED:
-                const statusHandler = this.chatEventHandlers.get('status');
-                if (statusHandler) statusHandler(eventData.userId, eventData.status);
-                break;
+    notifyHandlers(event, data) {
+        const handlers = this.messageHandlers.get(event);
+        if (handlers) {
+            handlers.forEach(handler => handler(data));
+        }
+    }
+
+    disconnect() {
+        if (this.client) {
+            this.client.deactivate();
+            this.connected = false;
+            this.subscriptions.clear();
+            this.messageHandlers.clear();
         }
     }
 }

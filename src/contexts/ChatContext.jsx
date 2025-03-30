@@ -3,6 +3,7 @@ import { useAuth } from './AuthContext';
 import chatService from '../services/chatService';
 import { useSocket } from './SocketContext';
 import axios from 'axios';
+import { websocketService } from '../services/websocketService';
 
 const ChatContext = createContext(null);
 

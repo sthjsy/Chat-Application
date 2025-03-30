@@ -1,7 +1,8 @@
 import api from './api';
 import axios from 'axios';
+import { API_URL } from '../constants/api';
+import authService from './authService';
 
-const API_URL = '/api';
 const TOKEN = () => localStorage.getItem('token');
 
 const chatService = {
@@ -134,7 +135,7 @@ const chatService = {
       return response.data;
     } catch (error) {
       console.error('Error fetching messages:', error);
-      throw new Error('Failed to fetch messages');
+      throw error;
     }
   },
 
@@ -148,16 +149,19 @@ const chatService = {
   sendMessage: async (chatId, content, messageType = 'TEXT') => {
     try {
       console.log('Sending message:', { chatId, content, messageType });
-      const response = await api.post(`/messages/chat/${chatId}`, { 
-        chatId,
-        content,
-        messageType 
-      });
+      const response = await axios.post(`${API_URL}/chats/${chatId}/messages`, 
+        { content },
+        {
+          headers: {
+            Authorization: `Bearer ${authService.getToken()}`
+          }
+        }
+      );
       console.log('Message sent successfully:', response.data);
       return response.data;
     } catch (error) {
       console.error('Error sending message:', error);
-      throw new Error(error.response?.data?.message || 'Failed to send message');
+      throw error;
     }
   },
 
@@ -172,32 +176,41 @@ const chatService = {
   editMessage: async (chatId, messageId, newContent, messageType = 'TEXT') => {
     try {
       console.log('Editing message:', { messageId, newContent, messageType });
-      const response = await api.put(`/messages/${messageId}`, { 
-        chatId: chatId,
-        content: newContent,
-        messageType: messageType
-      });
+      const response = await axios.put(`${API_URL}/chats/${chatId}/messages/${messageId}`,
+        { content: newContent },
+        {
+          headers: {
+            Authorization: `Bearer ${authService.getToken()}`
+          }
+        }
+      );
       console.log('Message edited successfully:', response.data);
       return response.data;
     } catch (error) {
       console.error('Error editing message:', error);
-      throw new Error(error.response?.data?.message || 'Failed to edit message');
+      throw error;
     }
   },
 
   /**
    * Delete a message
+   * @param {string} chatId - The ID of the chat
    * @param {string} messageId - The ID of the message
    * @returns {Promise<void>}
    */
-  deleteMessage: async (messageId) => {
+  deleteMessage: async (chatId, messageId) => {
     try {
       console.log('Deleting message:', messageId);
-      await api.delete(`/messages/${messageId}`);
+      const response = await axios.delete(`${API_URL}/chats/${chatId}/messages/${messageId}`, {
+        headers: {
+          Authorization: `Bearer ${authService.getToken()}`
+        }
+      });
       console.log('Message deleted successfully');
+      return response.data;
     } catch (error) {
       console.error('Error deleting message:', error);
-      throw new Error(error.response?.data?.message || 'Failed to delete message');
+      throw error;
     }
   },
 
@@ -512,6 +525,21 @@ const chatService = {
       throw new Error(error.response?.data?.message || 'Failed to get/create private chat');
     }
   },
+
+  handleSearch: async (query) => {
+    try {
+      const response = await axios.get(`${API_URL}/chats/search`, {
+        params: { query },
+        headers: {
+          Authorization: `Bearer ${authService.getToken()}`
+        }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error searching chats:', error);
+      throw error;
+    }
+  }
 };
 
 export default chatService;
