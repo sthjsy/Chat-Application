@@ -150,7 +150,7 @@ const chatService = {
     try {
       console.log('Sending message:', { chatId, content, messageType });
       const response = await axios.post(`${API_URL}/chats/${chatId}/messages`, 
-        { content },
+        { chatId, content, messageType },
         {
           headers: {
             Authorization: `Bearer ${authService.getToken()}`
