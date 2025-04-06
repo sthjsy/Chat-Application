@@ -7,6 +7,7 @@ import ChatItem from './ChatItem';
 import { FiSearch, FiPlus, FiFilter } from 'react-icons/fi';
 import { Form, InputGroup } from 'react-bootstrap';
 import chatService from '../../services/chatService';
+import { WS_URLS } from '../../constants/websocket-urls';
 
 const ChatList = () => {
   const { 
@@ -24,72 +25,177 @@ const ChatList = () => {
   const [showFilter, setShowFilter] = useState(false);
   const scrollRef = useRef(null);
 
+  // Log current chats whenever they change
   useEffect(() => {
-    if (!connected || !currentUser?.id) return;
+    console.log('ChatList: Current chats updated', chats);
+  }, [chats]);
 
-    console.log('Setting up chat list message subscription');
+  useEffect(() => {
+    if (!connected || !currentUser?.id) {
+      console.log('ChatList: Not connected or no current user, skipping subscriptions');
+      return;
+    }
 
+    console.log('ChatList: Setting up subscriptions for user', currentUser.id);
+
+    
     // Subscribe to user-specific messages for all chats
     const messageSubscription = subscribe(`/user/${currentUser.id}/queue/messages`, (message) => {
       try {
         const messageData = JSON.parse(message.body);
-        console.log('ChatList received message:', messageData);
+        console.log('ChatList: Received message event:', messageData);
         
         // Update the chat's last message
-        updateChatLastMessage(messageData.chatId, {
-          content: messageData.content,
-          timestamp: messageData.timestamp,
-          senderId: messageData.senderId
-        });
+        if (messageData.chatId) {
+          console.log('ChatList: Updating last message for chat', messageData.chatId);
+          updateChatLastMessage(messageData.chatId, {
+            content: messageData.content,
+            timestamp: messageData.createdAt,
+            senderId: messageData.senderId
+          });
 
-        // If this is a new chat, add it to the list
-        if (!chats.some(chat => chat.id === messageData.chatId)) {
-          chatService.getChat(messageData.chatId)
-            .then(newChat => {
-              if (newChat) {
-                setChats(prev => [newChat, ...prev]);
+          // If this is a new chat, add it to the list
+          if (!chats.some(chat => chat.id === messageData.chatId)) {
+            console.log('ChatList: New chat detected, fetching chat details');
+            chatService.getChat(messageData.chatId)
+              .then(newChat => {
+                if (newChat) {
+                  console.log('ChatList: Adding new chat to list', newChat);
+                  setChats(prev => [newChat, ...prev]);
+                }
+              })
+              .catch(error => {
+                console.error('ChatList: Error fetching new chat:', error);
+              });
+          } else {
+            // Update existing chat with new message
+            console.log('ChatList: Updating existing chat with new message');
+            setChats(prev => {
+              const updatedChats = prev.map(chat => {
+                if (chat.id === messageData.chatId) {
+                  return {
+                    ...chat,
+                    lastMessage: messageData.content,
+                    lastMessageTime: messageData.timestamp,
+                    lastMessageSenderId: messageData.senderId,
+                    lastMessageId: messageData.id
+                  };
+                }
+                return chat;
+              });
+              
+              // Move the updated chat to the top
+              const updatedChat = updatedChats.find(chat => chat.id === messageData.chatId);
+              if (updatedChat) {
+                const filteredChats = updatedChats.filter(chat => chat.id !== messageData.chatId);
+                return [updatedChat, ...filteredChats];
               }
-            })
-            .catch(error => {
-              console.error('Error fetching new chat:', error);
+              return updatedChats;
             });
+          }
+        } else {
+          console.warn('ChatList: Received message without chatId', messageData);
         }
       } catch (error) {
-        console.error('Error handling message in ChatList:', error);
+        console.error('ChatList: Error handling message:', error);
       }
     });
 
-    // Subscribe to chat events
-    const chatEventSubscription = subscribe(`/user/${currentUser.id}/queue/chat.events`, (event) => {
+    
+    const chatEventSubscription = subscribe(`/topic/chat/${currentUser.id}/chat/events`, (event) => {
       try {
         const eventData = JSON.parse(event.body);
-        console.log('ChatList received chat event:', eventData);
+        console.log('ChatList: Received chat event:', eventData);
         
-        if (eventData.type === 'NEW_CHAT') {
-          // Add new chat to the top of the list
-          setChats(prev => [eventData.chat, ...prev]);
-        } else if (eventData.type === 'CHAT_UPDATE') {
-          // Update existing chat and move it to the top
-          setChats(prev => {
-            const updatedChats = prev.map(chat => 
-              chat.id === eventData.chat.id ? eventData.chat : chat
-            );
-            const updatedChat = updatedChats.find(chat => chat.id === eventData.chat.id);
-            if (updatedChat) {
-              const filteredChats = updatedChats.filter(chat => chat.id !== eventData.chat.id);
-              return [updatedChat, ...filteredChats];
-            }
-            return updatedChats;
-          });
+        // Handle different event types
+        switch (eventData.eventType) {
+          case 'NEW_CHAT':
+            console.log('ChatList: Processing NEW_CHAT event');
+            // Add new chat to the top of the list
+            setChats(prev => [eventData, ...prev]);
+            break;
+            
+          case 'CHAT_UPDATE':
+            console.log('ChatList: Processing CHAT_UPDATE event');
+            // Update existing chat and move it to the top
+            setChats(prev => {
+              const updatedChats = prev.map(chat => 
+                chat.id === eventData.id ? eventData : chat
+              );
+              const updatedChat = updatedChats.find(chat => chat.id === eventData.id);
+              if (updatedChat) {
+                const filteredChats = updatedChats.filter(chat => chat.id !== eventData.id);
+                return [updatedChat, ...filteredChats];
+              }
+              return updatedChats;
+            });
+            break;
+            
+          case 'CHAT_DELETED':
+            console.log('ChatList: Processing CHAT_DELETED event');
+            // Remove chat from the list
+            setChats(prev => prev.filter(chat => chat.id !== eventData.id));
+            break;
+            
+          case 'PARTICIPANTS_UPDATED':
+            console.log('ChatList: Processing PARTICIPANTS_UPDATED event');
+            // Update chat with new participants
+            setChats(prev => prev.map(chat => 
+              chat.id === eventData.id ? eventData : chat
+            ));
+            break;
+            
+          case 'REMOVED_FROM_CHAT':
+            console.log('ChatList: Processing REMOVED_FROM_CHAT event');
+            // Remove chat if user was removed
+            setChats(prev => prev.filter(chat => chat.id !== eventData.id));
+            break;
+            
+          case 'USER_LEFT':
+            console.log('ChatList: Processing USER_LEFT event');
+            // Update chat when a user leaves
+            setChats(prev => prev.map(chat => 
+              chat.id === eventData.id ? eventData : chat
+            ));
+            break;
+            
+          case 'NEW_MESSAGE':
+            console.log('ChatList: Processing NEW_MESSAGE event');
+            // Update chat with new message
+            setChats(prev => {
+              const updatedChats = prev.map(chat => 
+                chat.id === eventData.id ? eventData : chat
+              );
+              const updatedChat = updatedChats.find(chat => chat.id === eventData.id);
+              if (updatedChat) {
+                const filteredChats = updatedChats.filter(chat => chat.id !== eventData.id);
+                return [updatedChat, ...filteredChats];
+              }
+              return updatedChats;
+            });
+            break;
+            
+          case 'MESSAGE_UPDATED':
+            console.log('ChatList: Processing MESSAGE_UPDATED event');
+            // Update chat with updated message
+            setChats(prev => prev.map(chat => 
+              chat.id === eventData.id ? eventData : chat
+            ));
+            break;
+            
+          default:
+            console.log('ChatList: Unhandled chat event type:', eventData.eventType);
         }
       } catch (error) {
-        console.error('Error handling chat event in ChatList:', error);
+        console.error('ChatList: Error handling chat event:', error);
       }
     });
 
     return () => {
+      console.log('ChatList: Cleaning up subscriptions');
       if (messageSubscription) unsubscribe(messageSubscription);
       if (chatEventSubscription) unsubscribe(chatEventSubscription);
+
     };
   }, [connected, currentUser, subscribe, unsubscribe, updateChatLastMessage, chats, setChats]);
 

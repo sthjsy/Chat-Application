@@ -75,29 +75,16 @@ const chatService = {
     try {
       console.log('Creating group chat with data:', groupData);
       
-      // Validate required fields
-      if (!groupData.name || !groupData.participantIds || !groupData.adminIds) {
-        throw new Error('Missing required fields for group creation');
-      }
-
-      // Set default values if not provided
       const payload = {
-        name: groupData.name,
+        chatName: groupData.name,
         description: groupData.description || '',
         chatType: 'GROUP',
         isPublic: groupData.isPublic ?? false,
-        participantIds: groupData.participantIds,
-        adminIds: groupData.adminIds,
-        settings: {
-          allowMemberInvite: groupData.settings?.allowMemberInvite ?? false,
-          allowMemberLeave: groupData.settings?.allowMemberLeave ?? true,
-          allowMemberMessage: groupData.settings?.allowMemberMessage ?? true,
-          ...groupData.settings
-        }
+        participantIds: groupData.participantIds
       };
 
       console.log('Sending group creation request with payload:', payload);
-      const response = await api.post('/chats/group', payload);
+      const response = await api.post('/api/chats/group', payload);
       console.log('Group chat created successfully:', response.data);
       return response.data;
     } catch (error) {
@@ -149,14 +136,7 @@ const chatService = {
   sendMessage: async (chatId, content, messageType = 'TEXT') => {
     try {
       console.log('Sending message:', { chatId, content, messageType });
-      const response = await axios.post(`${API_URL}/chats/${chatId}/messages`, 
-        { chatId, content, messageType },
-        {
-          headers: {
-            Authorization: `Bearer ${authService.getToken()}`
-          }
-        }
-      );
+      const response = await api.post(`/messages/chat`, { chatId, content, messageType });
       console.log('Message sent successfully:', response.data);
       return response.data;
     } catch (error) {
@@ -175,15 +155,9 @@ const chatService = {
    */
   editMessage: async (chatId, messageId, newContent, messageType = 'TEXT') => {
     try {
-      console.log('Editing message:', { messageId, newContent, messageType });
-      const response = await axios.put(`${API_URL}/chats/${chatId}/messages/${messageId}`,
-        { content: newContent },
-        {
-          headers: {
-            Authorization: `Bearer ${authService.getToken()}`
-          }
-        }
-      );
+      console.log('Editing message:', { messageId, newContent, messageType,chatId,messageId });
+      const response = await api.put(`/messages/update/message`,
+        { content: newContent, messageId, chatId,messageType });
       console.log('Message edited successfully:', response.data);
       return response.data;
     } catch (error) {
@@ -201,12 +175,10 @@ const chatService = {
   deleteMessage: async (chatId, messageId) => {
     try {
       console.log('Deleting message:', messageId);
-      const response = await axios.delete(`${API_URL}/chats/${chatId}/messages/${messageId}`, {
-        headers: {
-          Authorization: `Bearer ${authService.getToken()}`
-        }
-      });
-      console.log('Message deleted successfully');
+      const response = await api.delete(`/messages/delete/message/${messageId}`, 
+        { messageId:messageId, chatId });
+      console.log('Message deleted successfully'+response);
+      console.log('Message deleted successfully'+response.data);
       return response.data;
     } catch (error) {
       console.error('Error deleting message:', error);
@@ -221,7 +193,10 @@ const chatService = {
    */
   markMessagesAsRead: async (chatId) => {
     try {
-      await api.post(`/messages/chat/${chatId}/read`);
+      console.log("markMessagesAsRead :: chatId :: "+chatId);
+      const response = await api.post(`/messages/chat/read-all`, { chatId });
+      console.log("markMessagesAsRead :: "+response.data);
+      return response.data;
     } catch (error) {
       console.error('Error marking messages as read:', error);
       throw new Error('Failed to mark messages as read');
@@ -415,7 +390,7 @@ const chatService = {
   markAsRead: async (chatId) => {
     try {
       console.log("markAsRead :: chatId :: "+chatId);
-      const response = await api.put(`/messages/chat/${chatId}/read-all`);
+      const response = await api.put(`/messages/chat/read-all`, { chatId });
       console.log("markAsRead :: "+response.data);
       return response.data;
     } catch (error) {
@@ -434,8 +409,8 @@ const chatService = {
   addReaction: async (chatId, messageId, emoji) => {
     try {
       console.log('Adding reaction:', { chatId, messageId, emoji });
-      const response = await api.post(`/messages/${messageId}/reactions`, { 
-        emoji,
+      const response = await api.post(`/messages/reactions`, { 
+        reactionType: emoji,
         messageId,
         chatId
       });
@@ -457,8 +432,8 @@ const chatService = {
   removeReaction: async (chatId, messageId, emoji) => {
     try {
       console.log('Removing reaction:', { chatId, messageId, emoji });
-      const response = await api.delete(`/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`, {
-        data: { chatId }
+      const response = await api.delete(`/messages/reactions`, {
+        data: { chatId, reactionType:emoji,messageId }
       });
       console.log('Reaction removed successfully:', response.data);
       return response.data;
@@ -479,8 +454,8 @@ const chatService = {
   editReaction: async (chatId, messageId, oldEmoji, newEmoji) => {
     try {
       console.log('Editing reaction:', { chatId, messageId, oldEmoji, newEmoji });
-      const response = await api.put(`/messages/${messageId}/reactions/${encodeURIComponent(oldEmoji)}`, { 
-        emoji: newEmoji,
+      const response = await api.put(`/messages/reactions`, { 
+        reactionType:oldEmoji,
         messageId,
         chatId
       });
@@ -500,7 +475,7 @@ const chatService = {
   getMessageReactions: async (messageId) => {
     try {
       console.log('Getting reactions for message:', messageId);
-      const response = await api.get(`/messages/${messageId}/reactions`);
+      const response = await api.get(`/messages/reactions/${messageId}`);
       console.log('Reactions retrieved successfully:', response.data);
       return response.data;
     } catch (error) {
@@ -528,8 +503,8 @@ const chatService = {
 
   handleSearch: async (query) => {
     try {
-      const response = await axios.get(`${API_URL}/chats/search`, {
-        params: { query },
+      console.log("handleSearch :: query :: "+query);
+      const response = await axios.get(`${API_URL}/users/search/${query}`, {
         headers: {
           Authorization: `Bearer ${authService.getToken()}`
         }

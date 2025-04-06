@@ -33,24 +33,23 @@ const ChatItem = ({ chat, isSelected, onClick, userStatus }) => {
 
   const getChatName = () => {
     if (!chat) return 'Unknown';
-    if(chat.chatType)
-    {
-      if(chat.chatType === 'PRIVATE')
-      {
-        if(chat.participants[0].id === currentUser.id)  return chat.participants[1].fullName;
-        else  return chat.participants[0].fullName;
-      }
-      else  return chat.chatName;
+    
+    if (chat.chatType === 'PRIVATE') {
+      // For private chats, show the other participant's name
+      const otherParticipant = chat.participants.find(p => p.id !== currentUser.id);
+      return otherParticipant ? otherParticipant.fullName : 'Unknown User';
+    } else {
+      // For group chats, show the group name
+      return chat.chatName;
     }
-    else  return 'Unknown Chat';
   };
 
   const getChatUsername = () => {
     if (!chat) return '';
-    if(chat.chatType === 'PRIVATE')
-    {
-      if(chat.participants[0].id === currentUser.id)  return chat.participants[1].username;
-      else  return chat.participants[0].username;
+    
+    if (chat.chatType === 'PRIVATE') {
+      const otherParticipant = chat.participants.find(p => p.id !== currentUser.id);
+      return otherParticipant ? otherParticipant.username : '';
     }
     return '';
   };
@@ -59,7 +58,7 @@ const ChatItem = ({ chat, isSelected, onClick, userStatus }) => {
     if (!chat?.lastMessage) return 'No messages yet';
     
     // Truncate long messages
-    const maxLength = 15; // Reduced max length to accommodate time
+    const maxLength = 15;
     const content = chat.lastMessage;
     return content.length > maxLength 
       ? `${content.substring(0, maxLength)}...` 
@@ -72,23 +71,24 @@ const ChatItem = ({ chat, isSelected, onClick, userStatus }) => {
   };
 
   const getLastMessageSender = () => {
-    if (!chat?.lastMessageSender) return '';
+    if (!chat?.lastMessageSenderId) return '';
     
     // If the sender is the current user
-    if (chat.lastMessageSender === currentUser.fullName) return 'You';
+    if (chat.lastMessageSenderId === currentUser.id) return 'You';
     
-    // Split the name into words and get the first word (first name)
-    const nameParts = chat.lastMessageSender.split(' ');
-    return nameParts[0];
+    // Find the sender in participants
+    const sender = chat.participants.find(p => p.id === chat.lastMessageSenderId);
+    return sender ? sender.fullName.split(' ')[0] : '';
   };
 
   const getMessageStatus = () => {
     if (!chat?.lastMessage) return null;
     
-    const isLastMessageFromCurrentUser = chat.lastMessageSenderId === currentChat?.currentUser?.id;
+    const isLastMessageFromCurrentUser = chat.lastMessageSenderId === currentUser.id;
     if (!isLastMessageFromCurrentUser) return null;
     
-    if (chat.lastMessageRead) {
+    // Check if the message has been read (no unread count)
+    if (chat.totalUnreadCount === 0) {
       return <FiCheckCircle className="message-status read" />;
     }
     
@@ -116,26 +116,42 @@ const ChatItem = ({ chat, isSelected, onClick, userStatus }) => {
   };
 
   const getUnreadCount = () => {
-    if (!chat.unreadCount) return null;
-    return chat.unreadCount > 99 ? '99+' : chat.unreadCount;
+    if (!chat.totalUnreadCount) return null;
+      return chat.totalUnreadCount > 9 ? '9+' : chat.totalUnreadCount;
   };
 
   const getParticipantStatus = () => {
     if (!chat.participants || chat.participants.length === 0) return null;
     
     // For group chats, show online count
-    if (chat.type === 'GROUP' || chat.type === 'CHANNEL') {
-      const onlineCount = chat.participants.filter(p => userStatuses[p.id] === 'ONLINE').length;
+    if (chat.chatType === 'GROUP') {
+      const onlineCount = chat.participants.filter(p => p.status === 'ONLINE').length;
       return onlineCount > 0 ? `${onlineCount} online` : null;
     }
     
     // For private chats, show status of the other participant
-    const otherParticipant = chat.participants.find(p => p.id !== currentChat?.currentUser?.id);
+    const otherParticipant = chat.participants.find(p => p.id !== currentUser.id);
     if (otherParticipant) {
-      return userStatuses[otherParticipant.id] || null;
+      return otherParticipant.status || null;
     }
     
     return null;
+  };
+
+  const renderReactions = () => {
+    if (!chat.lastMessageReactions || chat.lastMessageReactions.length === 0) {
+      return null;
+    }
+
+    return (
+      <div className="message-reactions">
+        {chat.lastMessageReactions.map((reaction, index) => (
+          <span key={index} className="reaction-badge">
+            {reaction.emoji} {reaction.count > 1 ? reaction.count : ''}
+          </span>
+        ))}
+      </div>
+    );
   };
 
   return (
@@ -145,27 +161,38 @@ const ChatItem = ({ chat, isSelected, onClick, userStatus }) => {
     >
       <div className="d-flex align-items-center">
         <div className="position-relative me-2">
-          <FaUserCircle size={28} />
-          <span
-            className="position-absolute bottom-0 end-0 rounded-circle"
-            style={{ width: "8px", height: "8px", backgroundColor: getStatusColor() }}
-          ></span>
+          {chat.avatar ? (
+            <img 
+              src={chat.avatar} 
+              alt={getChatName()} 
+              className="chat-avatar rounded-circle"
+              width="40"
+              height="40"
+            />
+          ) : (
+            <FaUserCircle size={40} />
+          )}
+          {chat.chatType === 'PRIVATE' && (
+            <span
+              className="position-absolute bottom-0 end-0 rounded-circle"
+              style={{ width: "10px", height: "10px", backgroundColor: getStatusColor() }}
+            ></span>
+          )}
         </div>
         <div className="flex-grow-1">
           <div className="d-flex justify-content-between align-items-center">
-            <span className="chat-name">{getChatName()}</span>
-            {chat?.chatType === 'PRIVATE' && (
-              <span className="chat-username">@{getChatUsername()}</span>
-            )}
+            <span className="chat-name fw-bold">{getChatName()}</span>
+            <span className="chat-time text-muted small">{getLastMessageTime()}</span>
           </div>
           <div className="d-flex justify-content-between align-items-center">
             <div className="d-flex align-items-center message-preview">
               <small className="text-muted text-truncate">
                 {getLastMessageSender()}: {getLastMessagePreview()}
+                {renderReactions()}
               </small>
             </div>
             <div className="d-flex align-items-center message-meta">
-              <small className="text-muted ms-2">{getLastMessageTime()}</small>
+              {getMessageStatus()}
               {getUnreadCount() && (
                 <span className="badge bg-primary rounded-pill ms-2">
                   {getUnreadCount()}
@@ -173,6 +200,11 @@ const ChatItem = ({ chat, isSelected, onClick, userStatus }) => {
               )}
             </div>
           </div>
+          {chat.chatType === 'GROUP' && (
+            <div className="chat-participants small text-muted">
+              {getParticipantStatus()}
+            </div>
+          )}
         </div>
       </div>
     </div>

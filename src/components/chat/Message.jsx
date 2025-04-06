@@ -16,6 +16,7 @@ const Message = ({ message, onEdit, onDelete, onReact, onRemoveReaction, onEditR
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [hoveredReaction, setHoveredReaction] = useState(null);
+  const [showReadStatus, setShowReadStatus] = useState(false);
   const audioRef = useRef(null);
   const messageRef = useRef(null);
   const emojiButtonRef = useRef(null);
@@ -298,11 +299,74 @@ const Message = ({ message, onEdit, onDelete, onReact, onRemoveReaction, onEditR
     }
   };
 
+  // Get read users excluding current user and message sender
+  const getReadUsers = () => {
+    if (!message.readUnreadStatus) return [];
+    
+    return message.readUnreadStatus.filter(status => 
+      status.read && 
+      status.userId !== currentUser.id && 
+      status.userId !== message.senderId
+    );
+  };
+
+  // Get unread users excluding current user and message sender
+  const getUnreadUsers = () => {
+    if (!message.readUnreadStatus) return [];
+    
+    return message.readUnreadStatus.filter(status => 
+      !status.read && 
+      status.userId !== currentUser.id && 
+      status.userId !== message.senderId
+    );
+  };
+
+  // Render read status tooltip
+  const renderReadStatusTooltip = () => {
+    const readUsers = getReadUsers();
+    const unreadUsers = getUnreadUsers();
+    
+    if (readUsers.length === 0 && unreadUsers.length === 0) return null;
+    
+    return (
+      <div className="read-status-tooltip">
+        {readUsers.length > 0 && (
+          <div className="read-users">
+            <div className="tooltip-header">Read by:</div>
+            {readUsers.map(user => (
+              <div key={user.id} className="tooltip-user">
+                {user.fullName || user.username}
+                {user.readAt && (
+                  <span className="tooltip-time">
+                    {format(new Date(user.readAt), 'h:mm a')}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        
+        {unreadUsers.length > 0 && (
+          <div className="unread-users">
+            <div className="tooltip-header">Not read by:</div>
+            {unreadUsers.map(user => (
+              <div key={user.id} className="tooltip-user">
+                {user.fullName || user.username}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div
       ref={messageRef}
       className={`message-container ${isOwnMessage ? 'own-message' : 'received-message'}`}
       data-message-id={message.id}
+      onMouseEnter={() => setShowReadStatus(true)}
+      onMouseLeave={() => setShowReadStatus(false)}
     >
       <div className="message-header">
         <span className="sender-name small">
@@ -316,21 +380,21 @@ const Message = ({ message, onEdit, onDelete, onReact, onRemoveReaction, onEditR
       </div>
 
       <div className="message-footer">
-        <div className="message-reactions">
+        <div className="message-reactions small">
           {message.reactions?.map((reaction, index) => (
             <span 
-              key={`${reaction.emoji}-${index}`}
-              className={`reaction-bubble ${reaction.userId === currentUser.id ? 'own-reaction' : ''}`}
-              onClick={() => handleReactionClick(reaction.emoji)}
+              key={`${reaction.reactionType}-${index}`}
+              className={`reaction-bubble ${reaction.users.some(u => u.id === currentUser.id) ? 'own-reaction' : ''}`}
+              onClick={() => handleReactionClick(reaction.reactionType)}
               onMouseEnter={() => setHoveredReaction(reaction)}
               onMouseLeave={() => setHoveredReaction(null)}
               title={getReactionTooltip(reaction)}
             >
-              <span className="reaction-emoji">{reaction.emoji}</span>
+              <span className="reaction-emoji">{reaction.reactionType}</span>
               {reaction.count > 1 && (
                 <span className="reaction-count">{reaction.count}</span>
               )}
-              {hoveredReaction?.emoji === reaction.emoji && (
+              {hoveredReaction?.reactionType === reaction.reactionType && (
                 <div className="reaction-tooltip">
                   {getReactionTooltip(reaction)}
                 </div>
@@ -359,6 +423,12 @@ const Message = ({ message, onEdit, onDelete, onReact, onRemoveReaction, onEditR
             <FiSmile />
           </button>
         </div>
+        
+        {isOwnMessage && showReadStatus && (
+          <div className="message-status">
+            {renderReadStatusTooltip()}
+          </div>
+        )}
       </div>
 
       {showEmojiPicker && (

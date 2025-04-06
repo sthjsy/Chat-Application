@@ -39,7 +39,7 @@ export const SocketProvider = ({ children }) => {
       console.log('Connecting with token:', token);
       console.log('User ID:', currentUser.id);
 
-      // Create STOMP client
+      // Create STOMP client with headers
       console.log('Initializing WebSocket connection to:', WS_URLS.BASE_URL);
       client = new Client({
         webSocketFactory: () => new SockJS(WS_URLS.BASE_URL, null, {
@@ -47,7 +47,15 @@ export const SocketProvider = ({ children }) => {
           withCredentials: false
         }),
         connectHeaders: {
-          Authorization: `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
+          userId: currentUser.id.toString(),
+          username: currentUser.username,
+          fullName: currentUser.fullName || '',
+          email: currentUser.email || '',
+          role: currentUser.role || 'USER',
+          deviceInfo: navigator.userAgent,
+          clientVersion: '1.0.0', // Add your app version here
+          connectionType: 'web'
         },
         debug: (str) => {
           console.log('STOMP: ' + str);
@@ -63,6 +71,14 @@ export const SocketProvider = ({ children }) => {
         if (sockjs && sockjs.xhr) {
           sockjs.xhr.withCredentials = false;
           sockjs.xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+          sockjs.xhr.setRequestHeader('userId', currentUser.id.toString());
+          sockjs.xhr.setRequestHeader('username', currentUser.username);
+          sockjs.xhr.setRequestHeader('fullName', currentUser.fullName || '');
+          sockjs.xhr.setRequestHeader('email', currentUser.email || '');
+          sockjs.xhr.setRequestHeader('role', currentUser.role || 'USER');
+          sockjs.xhr.setRequestHeader('deviceInfo', navigator.userAgent);
+          sockjs.xhr.setRequestHeader('clientVersion', '1.0.0');
+          sockjs.xhr.setRequestHeader('connectionType', 'web');
         }
       };
 
@@ -128,7 +144,13 @@ export const SocketProvider = ({ children }) => {
           destination: WS_URLS.PUBLISH.ADD_USER,
           body: JSON.stringify({
             userId: currentUser.id,
-            username: currentUser.username
+            username: currentUser.username,
+            fullName: currentUser.fullName || '',
+            email: currentUser.email || '',
+            role: currentUser.role || 'USER',
+            deviceInfo: navigator.userAgent,
+            clientVersion: '1.0.0',
+            connectionType: 'web'
           })
         });
 
@@ -203,6 +225,61 @@ export const SocketProvider = ({ children }) => {
     );
     newSubscriptions.push(messageSubscription);
 
+    // Subscribe to deleted messages
+    const deletedMessageSubscription = stompClient.subscribe(
+      WS_URLS.SUBSCRIBE.CHAT_MESSAGES_DELETED(chatId),
+      message => {
+        const messageId = JSON.parse(message.body);
+        console.log('Message deleted:', messageId);
+        // Handle deleted message
+      }
+    );
+    newSubscriptions.push(deletedMessageSubscription);
+
+    // Subscribe to message reactions
+    const reactionSubscription = stompClient.subscribe(
+      WS_URLS.SUBSCRIBE.CHAT_MESSAGES_REACTIONS(chatId),
+      message => {
+        const messageData = JSON.parse(message.body);
+        console.log('Message reaction added:', messageData);
+        // Handle message reaction
+      }
+    );
+    newSubscriptions.push(reactionSubscription);
+
+    // Subscribe to removed reactions
+    const removedReactionSubscription = stompClient.subscribe(
+      WS_URLS.SUBSCRIBE.CHAT_MESSAGES_REACTIONS_REMOVED(chatId),
+      message => {
+        const messageData = JSON.parse(message.body);
+        console.log('Message reaction removed:', messageData);
+        // Handle removed reaction
+      }
+    );
+    newSubscriptions.push(removedReactionSubscription);
+
+    // Subscribe to read messages
+    const readMessageSubscription = stompClient.subscribe(
+      WS_URLS.SUBSCRIBE.CHAT_MESSAGES_READ(chatId),
+      message => {
+        const messageData = JSON.parse(message.body);
+        console.log('Message read:', messageData);
+        // Handle read message
+      }
+    );
+    newSubscriptions.push(readMessageSubscription);
+
+    // Subscribe to read all messages
+    const readAllMessagesSubscription = stompClient.subscribe(
+      WS_URLS.SUBSCRIBE.CHAT_MESSAGES_READ_ALL(chatId),
+      message => {
+        const messageData = JSON.parse(message.body);
+        console.log('All messages read:', messageData);
+        // Handle read all messages
+      }
+    );
+    newSubscriptions.push(readAllMessagesSubscription);
+
     // Subscribe to typing indicators
     const typingSubscription = stompClient.subscribe(
       WS_URLS.SUBSCRIBE.CHAT_TYPING(chatId),
@@ -225,6 +302,17 @@ export const SocketProvider = ({ children }) => {
     );
     newSubscriptions.push(eventSubscription);
 
+    // Subscribe to chat topic
+    const chatTopicSubscription = stompClient.subscribe(
+      `/topic/chat/${chatId}`,
+      chat => {
+        const chatData = JSON.parse(chat.body);
+        console.log('Chat topic update:', chatData);
+        // Handle chat topic update
+      }
+    );
+    newSubscriptions.push(chatTopicSubscription);
+
     // Subscribe to call signals
     const callSubscription = stompClient.subscribe(
       WS_URLS.SUBSCRIBE.CALL_SIGNALING(chatId),
@@ -238,6 +326,199 @@ export const SocketProvider = ({ children }) => {
 
     setActiveSubscriptions(prev => new Map(prev.set(chatId, newSubscriptions)));
   }, [stompClient, connected, currentUser]);
+
+  // Create private chat
+  const createPrivateChat = useCallback((userId, chatName, description) => {
+    if (!stompClient || !connected) {
+      console.error('STOMP client not connected');
+      return;
+    }
+
+    try {
+      console.log('Creating private chat:', { userId, chatName, description });
+
+      const payload = {
+        chatType: 'PRIVATE',
+        userId,
+        chatName: chatName || 'Private Chat',
+        description: description || 'Private conversation'
+      };
+
+      stompClient.publish({
+        destination: WS_URLS.PUBLISH.CREATE_CHAT,
+        body: JSON.stringify(payload)
+      });
+
+      return payload;
+    } catch (error) {
+      console.error('Error creating private chat:', error);
+      throw error;
+    }
+  }, [stompClient, connected]);
+
+  // Create group chat
+  const createGroupChat = useCallback((chatName, description, participantIds, isPublic = false) => {
+    if (!stompClient || !connected) {
+      console.error('STOMP client not connected');
+      return;
+    }
+
+    try {
+      console.log('Creating group chat:', { chatName, description, participantIds, isPublic });
+
+      const payload = {
+        chatType: 'GROUP',
+        chatName,
+        description,
+        participantIds,
+        isPublic
+      };
+
+      stompClient.publish({
+        destination: WS_URLS.PUBLISH.CREATE_CHAT,
+        body: JSON.stringify(payload)
+      });
+
+      return payload;
+    } catch (error) {
+      console.error('Error creating group chat:', error);
+      throw error;
+    }
+  }, [stompClient, connected]);
+
+  // Update chat
+  const updateChat = useCallback((chatId, chatName, description) => {
+    if (!stompClient || !connected) {
+      console.error('STOMP client not connected');
+      return;
+    }
+
+    try {
+      console.log('Updating chat:', { chatId, chatName, description });
+
+      const payload = {
+        chatId,
+        chatName,
+        description
+      };
+
+      stompClient.publish({
+        destination: WS_URLS.PUBLISH.UPDATE_CHAT,
+        body: JSON.stringify(payload)
+      });
+
+      return payload;
+    } catch (error) {
+      console.error('Error updating chat:', error);
+      throw error;
+    }
+  }, [stompClient, connected]);
+
+  // Delete chat
+  const deleteChat = useCallback((chatId) => {
+    if (!stompClient || !connected) {
+      console.error('STOMP client not connected');
+      return;
+    }
+
+    try {
+      console.log('Deleting chat:', { chatId });
+
+      const payload = {
+        chatId
+      };
+
+      stompClient.publish({
+        destination: WS_URLS.PUBLISH.DELETE_CHAT,
+        body: JSON.stringify(payload)
+      });
+
+      return payload;
+    } catch (error) {
+      console.error('Error deleting chat:', error);
+      throw error;
+    }
+  }, [stompClient, connected]);
+
+  // Add participant to chat
+  const addParticipant = useCallback((chatId, userId) => {
+    if (!stompClient || !connected) {
+      console.error('STOMP client not connected');
+      return;
+    }
+
+    try {
+      console.log('Adding participant to chat:', { chatId, userId });
+
+      const payload = {
+        chatId,
+        userId
+      };
+
+      stompClient.publish({
+        destination: WS_URLS.PUBLISH.ADD_PARTICIPANT,
+        body: JSON.stringify(payload)
+      });
+
+      return payload;
+    } catch (error) {
+      console.error('Error adding participant to chat:', error);
+      throw error;
+    }
+  }, [stompClient, connected]);
+
+  // Remove participant from chat
+  const removeParticipant = useCallback((chatId, userId) => {
+    if (!stompClient || !connected) {
+      console.error('STOMP client not connected');
+      return;
+    }
+
+    try {
+      console.log('Removing participant from chat:', { chatId, userId });
+
+      const payload = {
+        chatId,
+        userId
+      };
+
+      stompClient.publish({
+        destination: WS_URLS.PUBLISH.REMOVE_PARTICIPANT,
+        body: JSON.stringify(payload)
+      });
+
+      return payload;
+    } catch (error) {
+      console.error('Error removing participant from chat:', error);
+      throw error;
+    }
+  }, [stompClient, connected]);
+
+  // Leave chat
+  const leaveChat = useCallback((chatId) => {
+    if (!stompClient || !connected) {
+      console.error('STOMP client not connected');
+      return;
+    }
+
+    try {
+      console.log('Leaving chat:', { chatId });
+
+      const payload = {
+        chatId
+      };
+
+      stompClient.publish({
+        destination: WS_URLS.PUBLISH.LEAVE_CHAT,
+        body: JSON.stringify(payload)
+      });
+
+      return payload;
+    } catch (error) {
+      console.error('Error leaving chat:', error);
+      throw error;
+    }
+  }, [stompClient, connected]);
 
   // Send message
   const sendMessage = useCallback(async (chatId, content, attachments = []) => {
@@ -268,12 +549,8 @@ export const SocketProvider = ({ children }) => {
 
       const message = {
         chatId,
-        senderId: currentUser.id,
-        senderName: currentUser.username,
         content,
-        messageType,
-        attachments: attachmentUrls,
-        timestamp: new Date().toISOString()
+        messageType
       };
 
       console.log('Sending message via WebSocket:', message);
@@ -288,37 +565,184 @@ export const SocketProvider = ({ children }) => {
       console.error('Error sending message:', error);
       throw error;
     }
-  }, [stompClient, connected, currentUser]);
+  }, [stompClient, connected]);
+
+  // Edit message
+  const editMessage = useCallback((messageId, chatId, content) => {
+    if (!stompClient || !connected) {
+      console.error('STOMP client not connected');
+      return;
+    }
+
+    try {
+      console.log('Editing message:', { messageId, chatId, content });
+
+      const message = {
+        messageId,
+        chatId,
+        content
+      };
+
+      stompClient.publish({
+        destination: WS_URLS.PUBLISH.EDIT_MESSAGE,
+        body: JSON.stringify(message)
+      });
+
+      return message;
+    } catch (error) {
+      console.error('Error editing message:', error);
+      throw error;
+    }
+  }, [stompClient, connected]);
+
+  // Delete message
+  const deleteMessage = useCallback((messageId, chatId) => {
+    if (!stompClient || !connected) {
+      console.error('STOMP client not connected');
+      return;
+    }
+
+    try {
+      console.log('Deleting message:', { messageId, chatId });
+
+      const message = {
+        messageId,
+        chatId
+      };
+
+      stompClient.publish({
+        destination: WS_URLS.PUBLISH.DELETE_MESSAGE,
+        body: JSON.stringify(message)
+      });
+
+      return message;
+    } catch (error) {
+      console.error('Error deleting message:', error);
+      throw error;
+    }
+  }, [stompClient, connected]);
+
+  // Add reaction to message
+  const addReaction = useCallback((messageId, chatId, reactionType) => {
+    if (!stompClient || !connected) {
+      console.error('STOMP client not connected');
+      return;
+    }
+
+    try {
+      console.log('Adding reaction:', { messageId, chatId, reactionType });
+
+      const message = {
+        messageId,
+        chatId,
+        reactionType
+      };
+
+      stompClient.publish({
+        destination: WS_URLS.PUBLISH.ADD_REACTION,
+        body: JSON.stringify(message)
+      });
+
+      return message;
+    } catch (error) {
+      console.error('Error adding reaction:', error);
+      throw error;
+    }
+  }, [stompClient, connected]);
+
+  // Remove reaction from message
+  const removeReaction = useCallback((messageId, chatId, reactionType) => {
+    if (!stompClient || !connected) {
+      console.error('STOMP client not connected');
+      return;
+    }
+
+    try {
+      console.log('Removing reaction:', { messageId, chatId, reactionType });
+
+      const message = {
+        messageId,
+        chatId,
+        reactionType
+      };
+
+      stompClient.publish({
+        destination: WS_URLS.PUBLISH.REMOVE_REACTION,
+        body: JSON.stringify(message)
+      });
+
+      return message;
+    } catch (error) {
+      console.error('Error removing reaction:', error);
+      throw error;
+    }
+  }, [stompClient, connected]);
+
+  // Mark message as read
+  const markMessageAsRead = useCallback((messageId, chatId) => {
+    if (!stompClient || !connected) {
+      console.error('STOMP client not connected');
+      return;
+    }
+
+    try {
+      console.log('Marking message as read:', { messageId, chatId });
+
+      const message = {
+        messageId,
+        chatId
+      };
+
+      stompClient.publish({
+        destination: WS_URLS.PUBLISH.READ_MESSAGE,
+        body: JSON.stringify(message)
+      });
+
+      return message;
+    } catch (error) {
+      console.error('Error marking message as read:', error);
+      throw error;
+    }
+  }, [stompClient, connected]);
+
+  // Mark all messages as read
+  const markMessagesAsRead = useCallback((chatId) => {
+    if (!stompClient || !connected) {
+      console.error('STOMP client not connected');
+      return;
+    }
+
+    try {
+      console.log('Marking all messages as read:', { chatId });
+
+      const message = {
+        chatId
+      };
+
+      stompClient.publish({
+        destination: WS_URLS.PUBLISH.READ_ALL_MESSAGES,
+        body: JSON.stringify(message)
+      });
+
+      return message;
+    } catch (error) {
+      console.error('Error marking all messages as read:', error);
+      throw error;
+    }
+  }, [stompClient, connected]);
 
   // Send typing indicator
-  const sendTypingIndicator = useCallback((chatId, isTyping = true) => {
+  const sendTypingIndicator = useCallback((chatId) => {
     if (!stompClient || !connected) return;
     
-    console.log('Sending typing indicator:', { chatId, isTyping });
+    console.log('Sending typing indicator:', { chatId });
     stompClient.publish({
-      destination: WS_URLS.PUBLISH.TYPING_INDICATOR(chatId),
+      destination: WS_URLS.PUBLISH.TYPING_INDICATOR,
       body: JSON.stringify({
-        userId: currentUser.id,
-        username: currentUser.username,
-        isTyping
+        chatId
       })
     });
-  }, [stompClient, connected, currentUser]);
-
-  // Mark messages as read
-  const markMessagesAsRead = useCallback((chatId, messageIds) => {
-    if (!stompClient || !connected) return;
-    
-    console.log('Marking messages as read:', { chatId, messageIds });
-    stompClient.publish({
-      destination: WS_URLS.PUBLISH.MARK_READ,
-      body: JSON.stringify({
-        chatId,
-        userId: currentUser.id,
-        messageIds
-      })
-    });
-  }, [stompClient, connected, currentUser]);
+  }, [stompClient, connected]);
 
   // Mark notification as read
   const markNotificationAsRead = useCallback((notificationId) => {
@@ -373,12 +797,24 @@ export const SocketProvider = ({ children }) => {
     onlineUsers,
     notifications,
     sendMessage,
-    sendTypingIndicator,
+    editMessage,
+    deleteMessage,
+    addReaction,
+    removeReaction,
+    markMessageAsRead,
     markMessagesAsRead,
+    sendTypingIndicator,
     markNotificationAsRead,
     updateStatus,
     subscribeToChat,
     initiateCall,
+    createPrivateChat,
+    createGroupChat,
+    updateChat,
+    deleteChat,
+    addParticipant,
+    removeParticipant,
+    leaveChat,
     subscribe: useCallback((destination, callback) => {
       if (!stompClient) {
         console.error('STOMP client not available');

@@ -102,7 +102,7 @@ const ChatWindow = () => {
     console.log('Setting up message subscriptions for chat:', chatId);
 
     // Subscribe to chat messages for current chat only
-    const messageSubscription = subscribe(`/topic/chat/${chatId}`, (message) => {
+    const messageSubscription = subscribe(`/topic/chat/${chatId}/messages`, (message) => {
       try {
         const messageData = JSON.parse(message.body);
         console.log('Received message for current chat:', messageData);
@@ -117,7 +117,7 @@ const ChatWindow = () => {
 
           // Mark message as read if it's not from current user
           if (messageData.senderId !== currentUser.id) {
-            markMessagesAsRead(chatId, [messageData.id]);
+            chatService.markMessagesAsRead(chatId);
           }
         }
       } catch (error) {
@@ -125,10 +125,78 @@ const ChatWindow = () => {
       }
     });
 
+    // Subscribe to deleted messages
+    const deletedMessageSubscription = subscribe(`/topic/chat/${chatId}/messages/delete`, (message) => {
+      try {
+        const deletedMessageId = JSON.parse(message.body);
+        console.log('Message deleted:', deletedMessageId);
+        
+        // Remove the deleted message from the messages state
+        setMessages(prevMessages => prevMessages.filter(msg => msg.id !== deletedMessageId));
+      } catch (error) {
+        console.error('Error handling deleted message:', error);
+      }
+    });
+
+    // Subscribe to message reactions
+    const messageReactionsSubscription = subscribe(`/topic/chat/${chatId}/messages/reactions`, (message) => {
+      try {
+        const messageData = JSON.parse(message.body);
+        console.log('Message reaction received:', messageData);
+        
+        // Update the message in the messages state with the new reactions
+        setMessages(prevMessages => 
+          prevMessages.map(msg => 
+            msg.id === messageData.id ? messageData : msg
+          )
+        );
+      } catch (error) {
+        console.error('Error handling message reaction:', error);
+      }
+    });
+
+    // Subscribe to removed message reactions
+    const removedReactionsSubscription = subscribe(`/topic/chat/${chatId}/messages/reactions/removed`, (message) => {
+      try {
+        const messageData = JSON.parse(message.body);
+        console.log('Message reaction removed:', messageData);
+        
+        // Update the message in the messages state with the updated reactions
+        setMessages(prevMessages => 
+          prevMessages.map(msg => 
+            msg.id === messageData.id ? messageData : msg
+          )
+        );
+      } catch (error) {
+        console.error('Error handling removed message reaction:', error);
+      }
+    });
+
+    // Subscribe to message edits
+    const messageEditSubscription = subscribe(`/topic/chat/${chatId}/messages/update`, (message) => {
+      try {
+        const messageData = JSON.parse(message.body);
+        console.log('Message edited:', messageData);
+        
+        // Update the message in the messages state with the edited content
+        setMessages(prevMessages => 
+          prevMessages.map(msg => 
+            msg.id === messageData.id ? messageData : msg
+          )
+        );
+      } catch (error) {
+        console.error('Error handling edited message:', error);
+      }
+    });
+
     // Cleanup subscription
     return () => {
       console.log('Cleaning up message subscriptions for chat:', chatId);
       if (messageSubscription) unsubscribe(messageSubscription);
+      if (deletedMessageSubscription) unsubscribe(deletedMessageSubscription);
+      if (messageReactionsSubscription) unsubscribe(messageReactionsSubscription);
+      if (removedReactionsSubscription) unsubscribe(removedReactionsSubscription);
+      if (messageEditSubscription) unsubscribe(messageEditSubscription);
     };
   }, [connected, chatId, currentUser?.id, subscribe, unsubscribe, markMessagesAsRead, addMessage, messages]);
 
@@ -141,7 +209,7 @@ const ChatWindow = () => {
             const messageId = entry.target.getAttribute('data-message-id');
             if (messageId && (!lastReadMessageRef.current || messageId > lastReadMessageRef.current)) {
               lastReadMessageRef.current = messageId;
-              // chatService.markAsRead(chatId);
+              chatService.markMessagesAsRead(chatId);
             }
           }
         });
@@ -194,7 +262,7 @@ const ChatWindow = () => {
   const handleMessageDelete = async (messageId) => {
     try {
       console.log('Deleting message:', messageId);
-      await chatService.deleteMessage(messageId);
+      await chatService.deleteMessage(chatId, messageId);
       console.log('Message deleted successfully');
       
       // Remove message from local state
