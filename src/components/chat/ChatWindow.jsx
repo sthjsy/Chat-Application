@@ -286,9 +286,11 @@ const ChatWindow = () => {
   // Handle sending message
   const handleSendMessage = async (e) => {
     e.preventDefault();
+    
     if (!newMessage.trim() && attachments.length === 0) return;
-
+    
     try {
+
       let messageType = MessageType.TEXT;
       let content = newMessage.trim();
 
@@ -309,21 +311,49 @@ const ChatWindow = () => {
           content = content || 'Sent a file';
         }
       }
+      // If this is a draft chat, we need to create it first
+      if (currentChat?.isDraft) {
+        console.log('Creating new chat from draft');
+        
+        // Extract the user ID from the draft chat ID (format: draft-{userId})
+        const userId = currentChat.id.replace('draft-', '');
+        
+        // Create the actual chat
+        const newChat = await chatService.createPrivateChat(userId);
+        console.log('New chat created:', newChat);
+        setCurrentChat(newChat);
+        
+        console.log('Sending message:', { 
+          chatId: newChat.id, 
+          content, 
+          messageType,
+          attachments: attachments.length 
+        });
+  
+        const message = await chatService.sendMessage(chatId, content, messageType);
+        console.log('Message sent successfully:', message);
+        
+        // Add message to local state
+        addMessage(message);
+        // Update the chat in the context
+        // This will be handled by the ChatContext when the chat is created
+         } else {
 
-      console.log('Sending message:', { 
-        chatId, 
-        content, 
-        messageType,
-        attachments: attachments.length 
-      });
-
-      const message = await chatService.sendMessage(chatId, content, messageType);
-      console.log('Message sent successfully:', message);
+        console.log('Sending message:', { 
+          chatId, 
+          content, 
+          messageType,
+          attachments: attachments.length 
+        });
+  
+        const message = await chatService.sendMessage(chatId, content, messageType);
+        console.log('Message sent successfully:', message);
+        
+        // Add message to local state
+        addMessage(message);
+      }
       
-      // Add message to local state
-      addMessage(message);
-      
-      // Clear input and attachments
+      // Clear the input
       setNewMessage('');
       setAttachments([]);
       
@@ -331,7 +361,7 @@ const ChatWindow = () => {
       scrollToBottom();
     } catch (error) {
       console.error('Error sending message:', error);
-      setError('Failed to send message');
+      setError('Failed to send message. Please try again.');
     }
   };
 

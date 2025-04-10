@@ -104,6 +104,8 @@ const ChatItem = ({ chat, isSelected, onClick, userStatus }) => {
         return '#FFC107';
       case 'OFFLINE':
         return '#9E9E9E';
+      case 'BUSY':
+        return '#F44336';
       default:
         return '#9E9E9E';
     }
@@ -121,90 +123,94 @@ const ChatItem = ({ chat, isSelected, onClick, userStatus }) => {
   };
 
   const getParticipantStatus = () => {
-    if (!chat.participants || chat.participants.length === 0) return null;
-    
-    // For group chats, show online count
-    if (chat.chatType === 'GROUP') {
-      const onlineCount = chat.participants.filter(p => p.status === 'ONLINE').length;
-      return onlineCount > 0 ? `${onlineCount} online` : null;
+    if (chat.chatType === 'PRIVATE') {
+      // For private chats, show the other participant's status
+      const otherParticipant = chat.participants.find(p => p.id !== currentUser.id);
+      if (!otherParticipant) return null;
+      
+      const status = userStatuses[otherParticipant.id];
+      return status ? (
+        <span className="user-status" style={{ color: getStatusColor() }}>
+          {getStatusText()}
+        </span>
+      ) : null;
+    } else {
+      // For group chats, show the number of online participants
+      const onlineCount = chat.participants.filter(p => 
+        p.id !== currentUser.id && userStatuses[p.id] === 'ONLINE'
+      ).length;
+      
+      return onlineCount > 0 ? (
+        <span className="user-status">
+          {onlineCount} online
+        </span>
+      ) : null;
     }
-    
-    // For private chats, show status of the other participant
-    const otherParticipant = chat.participants.find(p => p.id !== currentUser.id);
-    if (otherParticipant) {
-      return otherParticipant.status || null;
-    }
-    
-    return null;
   };
 
   const renderReactions = () => {
-    if (!chat.lastMessageReactions || chat.lastMessageReactions.length === 0) {
-      return null;
-    }
-
+    if (!chat?.lastMessageReactions || chat.lastMessageReactions.length === 0) return null;
+    
     return (
-      <div className="message-reactions">
+      <div className="message-reactions small">
         {chat.lastMessageReactions.map((reaction, index) => (
-          <span key={index} className="reaction-badge">
-            {reaction.emoji} {reaction.count > 1 ? reaction.count : ''}
+          <span key={index} className="reaction-bubble" title={`${reaction.count} reactions`}>
+            <span className="reaction-emoji">{reaction.emoji}</span>
+            <span className="reaction-count">{reaction.count}</span>
           </span>
         ))}
       </div>
     );
   };
 
+  // Check if this is a draft chat
+  const isDraft = chat?.isDraft === true;
+  
   return (
-    <div
-      onClick={() => onClick(chat)}
-      className={`chat-item ${isSelected ? 'selected' : ''}`}
+    <div 
+      className={`chat-item ${isSelected ? 'selected' : ''} ${isDraft ? 'draft' : ''}`}
+      onClick={onClick}
     >
       <div className="d-flex align-items-center">
-        <div className="position-relative me-2">
-          {chat.avatar ? (
-            <img 
-              src={chat.avatar} 
-              alt={getChatName()} 
-              className="chat-avatar rounded-circle"
-              width="40"
-              height="40"
-            />
-          ) : (
-            <FaUserCircle size={40} />
-          )}
-          {chat.chatType === 'PRIVATE' && (
-            <span
-              className="position-absolute bottom-0 end-0 rounded-circle"
-              style={{ width: "10px", height: "10px", backgroundColor: getStatusColor() }}
+        <div className="position-relative">
+          <FaUserCircle size={28} />
+          {!isDraft && getParticipantStatus() && (
+            <span 
+              className="position-absolute status-dot" 
+              style={{ 
+                backgroundColor: getStatusColor(),
+                bottom: 0,
+                right: 0
+              }}
             ></span>
           )}
         </div>
-        <div className="flex-grow-1">
+        <div className="ms-2 flex-grow-1">
           <div className="d-flex justify-content-between align-items-center">
-            <span className="chat-name fw-bold">{getChatName()}</span>
-            <span className="chat-time text-muted small">{getLastMessageTime()}</span>
+            <div className="chat-name">{getChatName()}</div>
+            <div className="message-meta">
+              <small className="text-muted">{getLastMessageTime()}</small>
+              {getMessageStatus()}
+            </div>
           </div>
           <div className="d-flex justify-content-between align-items-center">
-            <div className="d-flex align-items-center message-preview">
-              <small className="text-muted text-truncate">
-                {getLastMessageSender()}: {getLastMessagePreview()}
-                {renderReactions()}
-              </small>
-            </div>
-            <div className="d-flex align-items-center message-meta">
-              {getMessageStatus()}
-              {getUnreadCount() && (
-                <span className="badge bg-primary rounded-pill ms-2">
-                  {getUnreadCount()}
-                </span>
+            <div className="message-preview">
+              {isDraft ? (
+                <small className="text-muted">Draft chat - Click to start messaging</small>
+              ) : (
+                <>
+                  <small className="text-muted">
+                    {getLastMessageSender() && `${getLastMessageSender()}: `}
+                  </small>
+                  <small>{getLastMessagePreview()}</small>
+                </>
               )}
             </div>
+            {getUnreadCount() && (
+              <span className="badge bg-primary rounded-pill">{getUnreadCount()}</span>
+            )}
           </div>
-          {chat.chatType === 'GROUP' && (
-            <div className="chat-participants small text-muted">
-              {getParticipantStatus()}
-            </div>
-          )}
+          {renderReactions()}
         </div>
       </div>
     </div>

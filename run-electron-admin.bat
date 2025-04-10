@@ -1,0 +1,3 @@
+@echo off
+echo Running Electron with elevated privileges...
+powershell -Command "Start-Process -FilePath 'npx' -ArgumentList 'electron .' -Verb RunAs" 

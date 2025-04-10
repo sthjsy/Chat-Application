@@ -91,6 +91,11 @@ export const ChatProvider = ({ children }) => {
       if (!currentChat) return;
 
       try {
+        console.log('Fetching messages for chat:', currentChat);
+        if (currentChat.isDraft) {
+          setMessages([]);
+          return;
+        }
         setLoading(true);
         const fetchedMessages = await chatService.getMessages(currentChat.id);
         setMessages(fetchedMessages);

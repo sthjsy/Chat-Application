@@ -52,7 +52,7 @@ const chatService = {
    */
   createPrivateChat: async (userId) => {
     try {
-      const response = await api.post('/chats/private', { userId });
+      const response = await api.post(`/chats/private/${userId}`);
       return response.data;
     } catch (error) {
       console.error('Error creating private chat:', error);
@@ -497,7 +497,7 @@ const chatService = {
       return response.data;
     } catch (error) {
       console.error('Error getting/creating private chat:', error);
-      throw new Error(error.response?.data?.message || 'Failed to get/create private chat');
+      throw error;
     }
   },
 

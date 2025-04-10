@@ -73,11 +73,24 @@ const Chat = () => {
   // Handle user search
   const handleSearch = async (query) => {
     try {
-      const searchResults = await chatService.handleSearch(query);
-      setSearchResults(searchResults);
+      setSearchQuery(query);
+      setIsSearching(true);
+      setError(null);
+      
+      if (query.length > 2) {
+        const results = await chatService.handleSearch(query);
+        setSearchResults(results);
+        setShowSearchResults(true);
+      } else {
+        setSearchResults([]);
+        setShowSearchResults(false);
+      }
     } catch (error) {
-      console.error('Error searching chats:', error);
-      setError('Failed to search chats');
+      console.error('Error searching users:', error);
+      setError('Failed to search users. Please try again.');
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
     }
   };
 
@@ -85,19 +98,70 @@ const Chat = () => {
   const handleUserSelect = async (user) => {
     try {
       setError(null);
-      console.log('Getting/Creating private chat with user:', user.id);
-      const chat = await chatService.getPrivateChat(user.id);
-      console.log('Chat result:', chat);
+      setIsSearching(true);
       
-      // Update chat list if the chat is not already in the list
-      if (!chats.some(c => c.id === chat.id)) {
-        console.log('Adding new chat to chat list');
-        setChats(prevChats => [chat, ...prevChats]);
+      try {
+        // Try to get an existing private chat
+        const chat = await chatService.getPrivateChat(user.id);
+        
+        console.log('search chat:', chat.id);
+        chats.map(c => console.log('existing chat:', c.id));
+        // Check if chat already exists in ChatList
+        const existingChat = chats.find(c => c.id === chat.id);
+        console.log('existingChat:', existingChat);
+        if (existingChat) {
+          // If chat exists, just load it into ChatWindow
+          selectChat(existingChat);
+          setSelectedChat(existingChat);
+        } else {
+          // If chat doesn't exist in ChatList, add it and load into ChatWindow
+          setChats(prevChats => [chat, ...prevChats]);
+          selectChat(chat);
+          setSelectedChat(chat);
+        }
+      } catch (error) {
+        // If the chat doesn't exist yet (404), create a draft chat
+        if (error.response && error.response.status === 404) {
+          console.log('Chat not found, creating draft chat');
+          
+          // Create a draft chat object
+          const draftChat = {
+            id: `draft-${user.id}`,
+            chatType: 'PRIVATE',
+            chatName: `Chat with ${user.fullName || user.username}`,
+            participants: [
+              {
+                id: currentUser.id,
+                fullName: currentUser.fullName,
+                username: currentUser.username,
+                email: currentUser.email
+              },
+              {
+                id: user.id,
+                fullName: user.fullName,
+                username: user.username,
+                email: user.email
+              }
+            ],
+            lastMessage: 'No messages yet',
+            lastMessageTime: new Date().toISOString(),
+            lastMessageSenderId: null,
+            totalUnreadCount: 0,
+            isDraft: true
+          };
+          
+          // Add the draft chat to the beginning of the list
+          setChats(prevChats => [draftChat, ...prevChats]);
+          
+          // Set as current chat and selected chat
+          selectChat(draftChat);
+          setSelectedChat(draftChat);
+        } else {
+          // For other errors, show error message
+          console.error('Error getting private chat:', error);
+          setError('Failed to start chat. Please try again.');
+        }
       }
-      
-      // Set the chat as selected and current
-      setSelectedChat(chat);
-      selectChat(chat);
       
       // Clear search
       setSearchQuery('');
@@ -107,6 +171,8 @@ const Chat = () => {
     } catch (error) {
       console.error('Error handling user selection:', error);
       setError('Failed to start chat. Please try again.');
+    } finally {
+      setIsSearching(false);
     }
   };
 
@@ -140,7 +206,10 @@ const Chat = () => {
             className="form-control border-0" 
             placeholder="Search users..." 
             value={searchQuery}
-            onChange={(e) => handleSearch(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              handleSearch(e.target.value);
+            }}
             onKeyDown={handleKeyDown}
           />
           {isSearching && (

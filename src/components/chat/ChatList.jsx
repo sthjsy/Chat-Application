@@ -112,7 +112,13 @@ const ChatList = () => {
           case 'NEW_CHAT':
             console.log('ChatList: Processing NEW_CHAT event');
             // Add new chat to the top of the list
-            setChats(prev => [eventData, ...prev]);
+            const existingChat = chats.find(c => c.id === eventData.id);
+            if (existingChat) {
+              console.log('ChatList: Chat already exists, skipping');
+            } else {
+              console.log('ChatList: Chat does not exist, adding to list');
+              setChats(prev => [eventData, ...prev]);
+            }
             break;
             
           case 'CHAT_UPDATE':
