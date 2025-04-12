@@ -4,10 +4,11 @@ import { useChat } from '../../contexts/ChatContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSocket } from '../../contexts/SocketContext';
 import ChatItem from './ChatItem';
-import { FiSearch, FiPlus, FiFilter } from 'react-icons/fi';
-import { Form, InputGroup } from 'react-bootstrap';
+import { FiSearch, FiPlus, FiFilter, FiUsers, FiX } from 'react-icons/fi';
+import { Form, InputGroup, Modal, Button, Badge } from 'react-bootstrap';
 import chatService from '../../services/chatService';
 import { WS_URLS } from '../../constants/websocket-urls';
+import userService from '../../services/userService';
 
 const ChatList = () => {
   const { 
@@ -23,6 +24,14 @@ const ChatList = () => {
   const { subscribe, unsubscribe, connected } = useSocket();
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilter, setShowFilter] = useState(false);
+  const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
+  const [groupName, setGroupName] = useState('');
+  const [groupDescription, setGroupDescription] = useState('');
+  const [selectedUsers, setSelectedUsers] = useState([]);
+  const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [userSearchResults, setUserSearchResults] = useState([]);
+  const [isSearchingUsers, setIsSearchingUsers] = useState(false);
+  const [isCreatingGroup, setIsCreatingGroup] = useState(false);
   const scrollRef = useRef(null);
 
   // Log current chats whenever they change
@@ -226,9 +235,93 @@ const ChatList = () => {
     );
   });
 
+  // Handle user search for group creation
+  const handleUserSearch = async (query) => {
+    if (query.length < 2) {
+      setUserSearchResults([]);
+      return;
+    }
+
+    setIsSearchingUsers(true);
+    try {
+      const results = await chatService.handleSearch(query);
+      // Filter out current user and already selected users
+      const filteredResults = results.filter(user => 
+        user.id !== currentUser.id && 
+        !selectedUsers.some(selected => selected.id === user.id)
+      );
+      setUserSearchResults(filteredResults);
+    } catch (error) {
+      console.error('Error searching users:', error);
+    } finally {
+      setIsSearchingUsers(false);
+    }
+  };
+
+  // Add user to selected users
+  const handleAddUser = (user) => {
+    setSelectedUsers(prev => [...prev, user]);
+    setUserSearchResults(prev => prev.filter(u => u.id !== user.id));
+    setUserSearchQuery('');
+  };
+
+  // Remove user from selected users
+  const handleRemoveUser = (userId) => {
+    setSelectedUsers(prev => prev.filter(user => user.id !== userId));
+  };
+
+  // Create group chat
+  const handleCreateGroup = async () => {
+    if (!groupName.trim() || selectedUsers.length === 0) {
+      return;
+    }
+
+    setIsCreatingGroup(true);
+    try {
+      const groupData = {
+        name: groupName,
+        description: groupDescription,
+        participantIds: selectedUsers.map(user => user.id),
+        isPublic: false
+      };
+
+      const newGroupChat = await chatService.createGroupChat(groupData);
+      console.log('Group chat created:', newGroupChat);
+      
+      // Add the new group chat to the list
+      setChats(prev => [newGroupChat, ...prev]);
+      
+      // Select the new group chat
+      selectChat(newGroupChat);
+      
+      // Reset form and close modal
+      setGroupName('');
+      setGroupDescription('');
+      setSelectedUsers([]);
+      setShowCreateGroupModal(false);
+    } catch (error) {
+      console.error('Error creating group chat:', error);
+    } finally {
+      setIsCreatingGroup(false);
+    }
+  };
+
   return (
     <div className="chat-list-wrapper d-flex flex-column">
       <div className="chat-list-header p-2 border-bottom">
+        <div className="d-flex justify-content-between align-items-center mb-2">
+          <h6 className="mb-0">Chats</h6>
+          <Button 
+            variant="outline-primary" 
+            size="sm" 
+            className="rounded-circle p-1"
+            onClick={() => setShowCreateGroupModal(true)}
+            title="Create Group Chat"
+          >
+            <FiPlus size={16} />
+          </Button>
+        </div>
+        
         <InputGroup className="mb-2">
           <InputGroup.Text className="bg-light border-end-0 py-1">
             <FiSearch />
@@ -239,7 +332,10 @@ const ChatList = () => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
-          <InputGroup.Text className="bg-light border-start-0 py-1">
+          <InputGroup.Text 
+            className="bg-light border-start-0 py-1 cursor-pointer"
+            onClick={() => setShowFilter(!showFilter)}
+          >
             <FiFilter />
           </InputGroup.Text>
         </InputGroup>
@@ -287,6 +383,132 @@ const ChatList = () => {
           );
         })}
       </div>
+
+      {/* Create Group Chat Modal */}
+      <Modal show={showCreateGroupModal} onHide={() => setShowCreateGroupModal(false)}>
+        <Modal.Header closeButton>
+          <Modal.Title>Create Group Chat</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <Form>
+            <Form.Group className="mb-3">
+              <Form.Label>Group Name</Form.Label>
+              <Form.Control
+                type="text"
+                placeholder="Enter group name"
+                value={groupName}
+                onChange={(e) => setGroupName(e.target.value)}
+              />
+            </Form.Group>
+            
+            <Form.Group className="mb-3">
+              <Form.Label>Description (Optional)</Form.Label>
+              <Form.Control
+                as="textarea"
+                rows={2}
+                placeholder="Enter group description"
+                value={groupDescription}
+                onChange={(e) => setGroupDescription(e.target.value)}
+              />
+            </Form.Group>
+            
+            <Form.Group className="mb-3">
+              <Form.Label>Add Participants</Form.Label>
+              <InputGroup className="mb-2">
+                <InputGroup.Text className="bg-light border-end-0 py-1">
+                  <FiSearch />
+                </InputGroup.Text>
+                <Form.Control
+                  placeholder="Search users..."
+                  className="border-start-0 bg-light py-1"
+                  value={userSearchQuery}
+                  onChange={(e) => {
+                    setUserSearchQuery(e.target.value);
+                    handleUserSearch(e.target.value);
+                  }}
+                />
+              </InputGroup>
+              
+              {isSearchingUsers && (
+                <div className="text-center py-2">
+                  <div className="spinner-border spinner-border-sm text-primary" role="status">
+                    <span className="visually-hidden">Loading...</span>
+                  </div>
+                </div>
+              )}
+              
+              {userSearchResults.length > 0 && (
+                <div className="user-search-results mt-2 border rounded p-2" style={{ maxHeight: '150px', overflowY: 'auto' }}>
+                  {userSearchResults.map(user => (
+                    <div 
+                      key={user.id} 
+                      className="user-search-item d-flex align-items-center p-2 cursor-pointer hover-bg-light"
+                      onClick={() => handleAddUser(user)}
+                    >
+                      <div className="me-2">
+                        {user.profileImage ? (
+                          <img 
+                            src={user.profileImage} 
+                            alt={user.fullName} 
+                            className="rounded-circle"
+                            style={{ width: '32px', height: '32px', objectFit: 'cover' }}
+                          />
+                        ) : (
+                          <FiUsers size={24} />
+                        )}
+                      </div>
+                      <div>
+                        <div className="fw-bold">{user.fullName}</div>
+                        <small className="text-muted">{user.email}</small>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              {selectedUsers.length > 0 && (
+                <div className="selected-users mt-2">
+                  <div className="d-flex flex-wrap gap-1">
+                    {selectedUsers.map(user => (
+                      <Badge 
+                        key={user.id} 
+                        bg="primary" 
+                        className="d-flex align-items-center p-2"
+                      >
+                        {user.fullName}
+                        <FiX 
+                          size={14} 
+                          className="ms-1 cursor-pointer" 
+                          onClick={() => handleRemoveUser(user.id)}
+                        />
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </Form.Group>
+          </Form>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowCreateGroupModal(false)}>
+            Cancel
+          </Button>
+          <Button 
+            variant="primary" 
+            onClick={handleCreateGroup}
+            disabled={!groupName.trim() || selectedUsers.length === 0 || isCreatingGroup}
+          >
+            {isCreatingGroup ? (
+              <>
+                <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                Creating...
+              </>
+            ) : (
+              'Create Group'
+            )}
+          </Button>
+        </Modal.Footer>
+      </Modal>
     </div>
   );
 };

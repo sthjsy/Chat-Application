@@ -86,6 +86,10 @@ const ChatWindow = () => {
     // Clear messages when switching chats
     setMessages([]);
     setChatId(newChatId);
+    
+    // Clear message input and attachments when switching chats
+    setNewMessage('');
+    setAttachments([]);
   }, [currentChat]);
 
   // Subscribe to real-time messages
@@ -321,7 +325,8 @@ const ChatWindow = () => {
         // Create the actual chat
         const newChat = await chatService.createPrivateChat(userId);
         console.log('New chat created:', newChat);
-        setCurrentChat(newChat);
+        // Update currentChat state directly since we're in the ChatWindow component
+        currentChat = newChat;
         
         console.log('Sending message:', { 
           chatId: newChat.id, 

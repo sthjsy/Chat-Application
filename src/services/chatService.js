@@ -84,7 +84,7 @@ const chatService = {
       };
 
       console.log('Sending group creation request with payload:', payload);
-      const response = await api.post('/api/chats/group', payload);
+      const response = await api.post('/chats/group', payload);
       console.log('Group chat created successfully:', response.data);
       return response.data;
     } catch (error) {
