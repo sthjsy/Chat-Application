@@ -1,0 +1,180 @@
+.calendar-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background-color: #fff;
+}
+
+.calendar-header {
+  padding: 1rem;
+  border-bottom: 1px solid #e1e1e1;
+}
+
+.calendar-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.calendar-title h2 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.new-event-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background-color: #464775;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.calendar-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.view-controls {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.view-btn {
+  padding: 0.5rem 1rem;
+  border: 1px solid #e1e1e1;
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
+
+.view-btn:hover {
+  background-color: #f5f5f5;
+}
+
+.view-btn.active {
+  background-color: #464775;
+  color: white;
+  border-color: #464775;
+}
+
+.navigation-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.navigation-controls button {
+  padding: 0.5rem 1rem;
+  border: 1px solid #e1e1e1;
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
+
+.current-date {
+  font-weight: 500;
+  min-width: 150px;
+  text-align: center;
+}
+
+.calendar-grid {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.weekday-headers {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  border-bottom: 1px solid #e1e1e1;
+}
+
+.weekday-header {
+  padding: 1rem;
+  text-align: center;
+  border-right: 1px solid #e1e1e1;
+}
+
+.day-name {
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+}
+
+.day-date {
+  font-size: 1.25rem;
+}
+
+.week-view {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  overflow-y: auto;
+}
+
+.day-column {
+  min-height: 200px;
+  padding: 0.5rem;
+  border-right: 1px solid #e1e1e1;
+}
+
+.event-card {
+  margin: 0.5rem 0;
+  padding: 0.5rem;
+  border-radius: 4px;
+  background-color: #f0f2f5;
+}
+
+.event-card.meeting {
+  background-color: #e3f2fd;
+  border-left: 3px solid #2196f3;
+}
+
+.event-card.review {
+  background-color: #f3e5f5;
+  border-left: 3px solid #9c27b0;
+}
+
+.event-title {
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+}
+
+.event-details {
+  font-size: 0.875rem;
+  color: #666;
+}
+
+.event-details > div {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background-color: white;
+  padding: 2rem;
+  border-radius: 8px;
+  width: 100%;
+  max-width: 500px;
+} 

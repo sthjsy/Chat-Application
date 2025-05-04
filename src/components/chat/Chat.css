@@ -3,9 +3,9 @@
 }
 
 .sidebar-nav .nav-link {
-  padding: 8px;
-  border-radius: 4px;
-  margin: 4px;
+  padding: 6px;
+  border-radius: 2px;
+  margin: 2px;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -579,7 +579,7 @@
 /* Chat Item Wrapper */
 .chat-item-wrapper {
   padding: 0;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 0.5px solid #f0f0f0;
 }
 
 .chat-item-wrapper:hover {
@@ -697,7 +697,7 @@
 }
 
 .chat-item .d-flex {
-  padding: 2px 6px;
+  padding: 1px 7px;
 }
 
 .chat-item .chat-name {

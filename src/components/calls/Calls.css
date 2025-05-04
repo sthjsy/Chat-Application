@@ -1,0 +1,225 @@
+.calls-page {
+  padding: 2rem;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.calls-header {
+  margin-bottom: 2rem;
+}
+
+.calls-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.call-actions {
+  display: flex;
+  gap: 1rem;
+}
+
+.new-call-btn {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: white;
+}
+
+.new-call-btn.video {
+  background-color: #007bff;
+}
+
+.new-call-btn.audio {
+  background-color: #28a745;
+}
+
+.calls-filters {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background-color: white;
+  border-radius: 4px;
+  border: 1px solid #dee2e6;
+  width: 300px;
+}
+
+.search-bar input {
+  border: none;
+  outline: none;
+  width: 100%;
+}
+
+.filter-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.filter-btn {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 4px;
+  background-color: #f0f0f0;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.filter-btn:hover {
+  background-color: #e0e0e0;
+}
+
+.filter-btn.active {
+  background-color: #007bff;
+  color: white;
+}
+
+.calls-container {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.active-calls, .recent-calls {
+  background-color: white;
+  border-radius: 8px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.call-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.call-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 4px;
+  background-color: #f8f9fa;
+}
+
+.call-card.video {
+  border-left: 4px solid #007bff;
+}
+
+.call-card.audio {
+  border-left: 4px solid #28a745;
+}
+
+.call-card-header {
+  display: flex;
+  gap: 1rem;
+}
+
+.call-type-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background-color: #e9ecef;
+  border-radius: 50%;
+}
+
+.call-info {
+  flex: 1;
+}
+
+.call-participants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.participant {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+}
+
+.call-time, .call-duration {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #6c757d;
+  font-size: 0.875rem;
+}
+
+.call-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 1rem;
+  border-top: 1px solid #dee2e6;
+}
+
+.action-btn {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 4px;
+  background-color: #007bff;
+  color: white;
+  cursor: pointer;
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background-color: white;
+  padding: 2rem;
+  border-radius: 8px;
+  width: 100%;
+  max-width: 500px;
+}
+
+.call-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  border-radius: 4px;
+  background-color: #f8f9fa;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.option:hover {
+  background-color: #e9ecef;
+} 

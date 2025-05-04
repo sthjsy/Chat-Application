@@ -1,15 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {FaComments, FaCalendarAlt, FaBroadcastTower , FaSearch, FaUserCircle, FaSignOutAlt, FaBell, FaPhoneAlt, FaCommentDots ,FaFileAlt ,FaCalendarCheck  } from "react-icons/fa";
-import ChatList from './ChatList';
-import ChatWindow from './ChatWindow';
 import { useAuth } from '../../contexts/AuthContext';
 import { useChat } from '../../contexts/ChatContext';
 import chatService from '../../services/chatService';
 import axios from 'axios';
-import './Chat.css';
+import '../../components/chat/ChatApplication.css';
 
-const Chat = () => {
+const Activity = () => {
   const [selectedChat, setSelectedChat] = useState(null);
   const { currentUser, logout } = useAuth();
   const { currentChat, setCurrentChat, selectChat, chats, setChats } = useChat();
@@ -341,21 +339,12 @@ const Chat = () => {
           </div>
         </nav>
 
-        {/* Chat List */}
+        {/* Main Content */}
         <div className="d-flex flex-column bg-light p-2" style={{ width: "275px" }}>
-          <ChatList
-            selectedChat={selectedChat}
-            onSelectChat={setSelectedChat}
-          />
-        </div>
-
-        {/* Chat Window */}
-        <div className="d-flex flex-column flex-grow-1">
-          <ChatWindow selectedChat={selectedChat} />
         </div>
       </div>
     </div>
   );
 };
 
-export default Chat; 
+export default Activity; 

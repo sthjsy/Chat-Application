@@ -11,6 +11,10 @@ import Login from './components/auth/Login';
 import Register from './components/auth/Register';
 import AppLayout from './components/layout/AppLayout';
 import Chat from './components/chat/Chat';
+import Activity from './components/activity/Activity';
+import Announcement from './components/announcement/Announcement';
+import Calendar from './components/calendar/Calendar';
+import Call from './components/calls/Call';
 import VideoCall from './components/calls/VideoCall';
 import AudioCall from './components/calls/AudioCall';
 import ProtectedRoute from './components/common/ProtectedRoute';
@@ -48,6 +52,10 @@ const App = () => {
                     <Route index element={<Navigate to="/chat" replace />} />
                     <Route path="chat" element={<Chat />} />
                     <Route path="chat/:chatId" element={<Chat />} />
+                    <Route path="activity" element={<Activity />} />
+                    <Route path="announcement" element={<Announcement />} />
+                    <Route path="calendar" element={<Calendar />} />
+                    <Route path="call" element={<Call />} />
                     <Route path="video-call/:callId" element={<VideoCall />} />
                     <Route path="audio-call/:callId" element={<AudioCall />} />
                   </Route>
