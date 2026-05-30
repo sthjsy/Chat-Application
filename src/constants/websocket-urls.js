@@ -2,6 +2,7 @@
 export const WS_URLS = {
   // Base WebSocket URL - using http/https instead of ws/wss
   BASE_URL: 'http://localhost:8082/ws',
+  // BASE_URL: 'http://15.207.20.44:8080/ws',
   
   // Subscription endpoints
   SUBSCRIBE: {

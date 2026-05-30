@@ -4,6 +4,7 @@ import chatService from '../services/chatService';
 import { useSocket } from './SocketContext';
 import axios from 'axios';
 import { websocketService } from '../services/websocketService';
+import { getChatId } from '../utils/chatUtils';
 
 const ChatContext = createContext(null);
 
@@ -46,7 +47,7 @@ export const ChatProvider = ({ children }) => {
       
       // Update current chat if it exists in the new list
       if (currentChat) {
-        const updatedCurrentChat = sortedChats.find(chat => chat.id === currentChat.id);
+        const updatedCurrentChat = sortedChats.find(chat => getChatId(chat) === getChatId(currentChat));
         if (updatedCurrentChat) {
           setCurrentChat(updatedCurrentChat);
         }
@@ -97,7 +98,7 @@ export const ChatProvider = ({ children }) => {
           return;
         }
         setLoading(true);
-        const fetchedMessages = await chatService.getMessages(currentChat.id);
+        const fetchedMessages = await chatService.getMessages(getChatId(currentChat));
         setMessages(fetchedMessages);
       } catch (error) {
         console.error('Error fetching messages:', error);
@@ -118,7 +119,7 @@ export const ChatProvider = ({ children }) => {
       console.log('Received new message:', message);
       
       // Only append message to messages state if it belongs to the current chat
-      if (currentChat && message.chatId === currentChat.id) {
+      if (currentChat && message.chatId === getChatId(currentChat)) {
         setMessages(prev => [...prev, message]);
       }
       
@@ -131,7 +132,7 @@ export const ChatProvider = ({ children }) => {
                 lastMessage: message.content,
                 lastMessageTime: message.createdAt,
                 updatedAt: message.createdAt,
-                unreadCount: chat.id === currentChat?.id ? 0 : (chat.unreadCount || 0) + 1
+                unreadCount: getChatId(chat) === getChatId(currentChat) ? 0 : (chat.unreadCount || 0) + 1
               }
             : chat
         );
@@ -276,7 +277,7 @@ export const ChatProvider = ({ children }) => {
 
     try {
       console.log('Adding reaction:', { chatId: currentChat.id, messageId, emoji });
-      const updatedMessage = await chatService.addReaction(currentChat.id, messageId, emoji);
+      const updatedMessage = await chatService.addReaction(getChatId(currentChat), messageId, emoji);
       console.log('Reaction added successfully:', updatedMessage);
       
       setMessages(prev => prev.map(msg => 
@@ -296,7 +297,7 @@ export const ChatProvider = ({ children }) => {
 
     try {
       console.log('Removing reaction:', { chatId: currentChat.id, messageId, emoji });
-      const updatedMessage = await chatService.removeReaction(currentChat.id, messageId, emoji);
+      const updatedMessage = await chatService.removeReaction(getChatId(currentChat), messageId, emoji);
       console.log('Reaction removed successfully:', updatedMessage);
       
       setMessages(prev => prev.map(msg => 
@@ -316,7 +317,7 @@ export const ChatProvider = ({ children }) => {
 
     try {
       console.log('Editing reaction:', { chatId: currentChat.id, messageId, oldEmoji, newEmoji });
-      const updatedMessage = await chatService.editReaction(currentChat.id, messageId, oldEmoji, newEmoji);
+      const updatedMessage = await chatService.editReaction(getChatId(currentChat), messageId, oldEmoji, newEmoji);
       console.log('Reaction edited successfully:', updatedMessage);
       
       setMessages(prev => prev.map(msg => 
@@ -349,17 +350,24 @@ export const ChatProvider = ({ children }) => {
   }, [socket, connected, currentChat]);
 
   const selectChat = (chat) => {
-    if (!chat || !chat.id) {
+    if (!chat) {
       console.error('Invalid chat selected:', chat);
+      return;
+    }
+
+    if (!chat.isDraft && !getChatId(chat)) {
+      console.error('Invalid chat selected - missing chat id:', chat);
       return;
     }
     
     setCurrentChat(chat);
-    // Reset unread count for selected chat
-    setUnreadCounts(prev => ({
-      ...prev,
-      [chat.id]: 0
-    }));
+    const resolvedChatId = getChatId(chat);
+    if (resolvedChatId) {
+      setUnreadCounts(prev => ({
+        ...prev,
+        [resolvedChatId]: 0
+      }));
+    }
   };
 
   const sendMessage = async (chatId, content) => {
@@ -411,7 +419,7 @@ export const ChatProvider = ({ children }) => {
     if (!currentChat) return;
 
     try {
-      const updatedMessage = await chatService.editMessage(currentChat.id, messageId, content);
+      const updatedMessage = await chatService.editMessage(getChatId(currentChat), messageId, content);
       setMessages(prev => prev.map(msg => 
         msg.id === messageId ? updatedMessage : msg
       ));
@@ -439,7 +447,7 @@ export const ChatProvider = ({ children }) => {
     if (!currentChat) return;
 
     try {
-      await chatService.deleteMessage(currentChat.id, messageId);
+      await chatService.deleteMessage(getChatId(currentChat), messageId);
       setMessages(prev => prev.filter(msg => msg.id !== messageId));
       
       // Update chat's last message if this was the last message
@@ -592,7 +600,7 @@ export const ChatProvider = ({ children }) => {
     console.log('Adding new message:', message);
     
     // Only add message if it belongs to the current chat
-    if (!currentChat || message.chatId !== currentChat.id) {
+    if (!currentChat || message.chatId !== getChatId(currentChat)) {
       console.log('Message does not belong to current chat, not adding:', message.id);
       return;
     }
@@ -617,6 +625,7 @@ export const ChatProvider = ({ children }) => {
   const value = {
     chats,
     currentChat,
+    setCurrentChat,
     messages,
     loading,
     error,

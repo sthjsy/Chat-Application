@@ -195,13 +195,13 @@ const Chat = () => {
 
   return (
     <div className="container-fluid vh-100 d-flex flex-column">
-      <div className="d-flex align-items-center bg-dark text-white p-2 justify-content-between">
+      <div className="d-flex align-items-center bg-dark text-white p-2 justify-content-between w-100">
         <div className="ms-3 fw-bold">MS Teams</div>
-        <div className="d-flex align-items-center bg-light px-2 rounded w-50 position-relative" ref={searchContainerRef}>
+        <div className="d-flex align-items-center bg-light px-2 rounded w-75 position-relative" ref={searchContainerRef}>
           <FaSearch className="me-2" />
           <input 
             type="text" 
-            className="form-control border-0" 
+            className="form-control border-0 w-100" 
             placeholder="Search users..." 
             value={searchQuery}
             onChange={(e) => {
@@ -218,7 +218,7 @@ const Chat = () => {
             </div>
           )}
           {showSearchResults && (
-            <div className="search-results-dropdown">
+            <div className="search-results-dropdown w-100">
               {error && (
                 <div className="search-error p-2 text-danger">
                   {error}

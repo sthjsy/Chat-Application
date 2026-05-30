@@ -13,13 +13,13 @@ import chatService from '../../services/chatService';
 import { MessageType } from '../../constants/messageTypes';
 import { format, isSameDay } from 'date-fns';
 import authService from '../../services/authService';
+import { getChatId } from '../../utils/chatUtils';
 
 const ChatWindow = () => {
   const { currentUser } = useAuth();
   const { 
     sendMessage, 
     sendTypingIndicator, 
-    markMessagesAsRead,
     connected,
     subscribe,
     unsubscribe,
@@ -35,9 +35,11 @@ const ChatWindow = () => {
     setError,
     handleAddReaction,
     handleRemoveReaction,
-    handleEditReaction
+    handleEditReaction,
+    selectChat,
+    setChats
   } = useChat();
-  const [chatId, setChatId] = useState(null);
+  const activeChatId = getChatId(currentChat);
   const [newMessage, setNewMessage] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -66,53 +68,34 @@ const ChatWindow = () => {
   const [showUserDetails, setShowUserDetails] = useState(false);
   const [showGroupInfo, setShowGroupInfo] = useState(false);
 
-  // Single effect to handle chatId updates
+  // Clear message input when switching chats
   useEffect(() => {
-    console.log('ChatWindow - currentChat changed:', currentChat);
-    
-    if (!currentChat) {
-      console.log('No chat selected, clearing chatId');
-      setChatId(null);
-      return;
-    }
-
-    const newChatId = currentChat.id;
-    console.log('Updating chatId:', {
-      previousChatId: chatId,
-      newChatId: newChatId,
-      chatDetails: currentChat
-    });
-
-    // Clear messages when switching chats
-    setMessages([]);
-    setChatId(newChatId);
-    
-    // Clear message input and attachments when switching chats
+    if (!currentChat) return;
     setNewMessage('');
     setAttachments([]);
   }, [currentChat]);
 
   // Subscribe to real-time messages
   useEffect(() => {
-    if (!connected || !chatId || !currentUser?.id) {
+    if (!connected || !activeChatId || !currentUser?.id) {
       console.log('Not subscribing to messages - prerequisites not met:', { 
         connected, 
-        chatId, 
+        activeChatId, 
         userId: currentUser?.id 
       });
       return;
     }
 
-    console.log('Setting up message subscriptions for chat:', chatId);
+    console.log('Setting up message subscriptions for chat:', activeChatId);
 
     // Subscribe to chat messages for current chat only
-    const messageSubscription = subscribe(`/topic/chat/${chatId}/messages`, (message) => {
+    const messageSubscription = subscribe(`/topic/chat/${activeChatId}/messages`, (message) => {
       try {
         const messageData = JSON.parse(message.body);
         console.log('Received message for current chat:', messageData);
         
         // Only add message if it belongs to current chat
-        if (messageData.chatId === chatId) {
+        if (messageData.chatId === activeChatId) {
           // Check if message already exists
           const messageExists = messages.some(m => m.id === messageData.id);
           if (!messageExists) {
@@ -121,7 +104,7 @@ const ChatWindow = () => {
 
           // Mark message as read if it's not from current user
           if (messageData.senderId !== currentUser.id) {
-            chatService.markMessagesAsRead(chatId);
+            chatService.markMessagesAsRead(activeChatId);
           }
         }
       } catch (error) {
@@ -130,7 +113,7 @@ const ChatWindow = () => {
     });
 
     // Subscribe to deleted messages
-    const deletedMessageSubscription = subscribe(`/topic/chat/${chatId}/messages/delete`, (message) => {
+    const deletedMessageSubscription = subscribe(`/topic/chat/${activeChatId}/messages/delete`, (message) => {
       try {
         const deletedMessageId = JSON.parse(message.body);
         console.log('Message deleted:', deletedMessageId);
@@ -143,7 +126,7 @@ const ChatWindow = () => {
     });
 
     // Subscribe to message reactions
-    const messageReactionsSubscription = subscribe(`/topic/chat/${chatId}/messages/reactions`, (message) => {
+    const messageReactionsSubscription = subscribe(`/topic/chat/${activeChatId}/messages/reactions`, (message) => {
       try {
         const messageData = JSON.parse(message.body);
         console.log('Message reaction received:', messageData);
@@ -160,7 +143,7 @@ const ChatWindow = () => {
     });
 
     // Subscribe to removed message reactions
-    const removedReactionsSubscription = subscribe(`/topic/chat/${chatId}/messages/reactions/removed`, (message) => {
+    const removedReactionsSubscription = subscribe(`/topic/chat/${activeChatId}/messages/reactions/removed`, (message) => {
       try {
         const messageData = JSON.parse(message.body);
         console.log('Message reaction removed:', messageData);
@@ -177,7 +160,7 @@ const ChatWindow = () => {
     });
 
     // Subscribe to message edits
-    const messageEditSubscription = subscribe(`/topic/chat/${chatId}/messages/update`, (message) => {
+    const messageEditSubscription = subscribe(`/topic/chat/${activeChatId}/messages/update`, (message) => {
       try {
         const messageData = JSON.parse(message.body);
         console.log('Message edited:', messageData);
@@ -195,14 +178,14 @@ const ChatWindow = () => {
 
     // Cleanup subscription
     return () => {
-      console.log('Cleaning up message subscriptions for chat:', chatId);
+      console.log('Cleaning up message subscriptions for chat:', activeChatId);
       if (messageSubscription) unsubscribe(messageSubscription);
       if (deletedMessageSubscription) unsubscribe(deletedMessageSubscription);
       if (messageReactionsSubscription) unsubscribe(messageReactionsSubscription);
       if (removedReactionsSubscription) unsubscribe(removedReactionsSubscription);
       if (messageEditSubscription) unsubscribe(messageEditSubscription);
     };
-  }, [connected, chatId, currentUser?.id, subscribe, unsubscribe, markMessagesAsRead, addMessage, messages]);
+  }, [connected, activeChatId, currentUser?.id, subscribe, unsubscribe, addMessage, messages]);
 
   // Track message visibility for read receipts
   useEffect(() => {
@@ -213,7 +196,7 @@ const ChatWindow = () => {
             const messageId = entry.target.getAttribute('data-message-id');
             if (messageId && (!lastReadMessageRef.current || messageId > lastReadMessageRef.current)) {
               lastReadMessageRef.current = messageId;
-              chatService.markMessagesAsRead(chatId);
+              chatService.markMessagesAsRead(activeChatId);
             }
           }
         });
@@ -227,7 +210,7 @@ const ChatWindow = () => {
     return () => {
       messageElements.forEach(element => observer.unobserve(element));
     };
-  }, [messages, chatId]);
+  }, [messages, activeChatId]);
 
   // Get typing indicator text
   const getTypingIndicatorText = () => {
@@ -250,7 +233,7 @@ const ChatWindow = () => {
   const handleMessageEdit = async (messageId, newContent) => {
     try {
       console.log('Editing message:', { messageId, newContent });
-      const updatedMessage = await chatService.editMessage(chatId, messageId, newContent, 'TEXT');
+      const updatedMessage = await chatService.editMessage(activeChatId, messageId, newContent, 'TEXT');
       console.log('Message edited successfully:', updatedMessage);
       
       // Update message in local state
@@ -266,7 +249,7 @@ const ChatWindow = () => {
   const handleMessageDelete = async (messageId) => {
     try {
       console.log('Deleting message:', messageId);
-      await chatService.deleteMessage(chatId, messageId);
+      await chatService.deleteMessage(activeChatId, messageId);
       console.log('Message deleted successfully');
       
       // Remove message from local state
@@ -294,7 +277,6 @@ const ChatWindow = () => {
     if (!newMessage.trim() && attachments.length === 0) return;
     
     try {
-
       let messageType = MessageType.TEXT;
       let content = newMessage.trim();
 
@@ -315,48 +297,42 @@ const ChatWindow = () => {
           content = content || 'Sent a file';
         }
       }
-      // If this is a draft chat, we need to create it first
+
+      let resolvedChatId = activeChatId;
+
+      // If this is a draft chat, create it on the backend first
       if (currentChat?.isDraft) {
         console.log('Creating new chat from draft');
-        
-        // Extract the user ID from the draft chat ID (format: draft-{userId})
         const userId = currentChat.id.replace('draft-', '');
-        
-        // Create the actual chat
         const newChat = await chatService.createPrivateChat(userId);
-        console.log('New chat created:', newChat);
-        // Update currentChat state directly since we're in the ChatWindow component
-        currentChat = newChat;
-        
-        console.log('Sending message:', { 
-          chatId: newChat.id, 
-          content, 
-          messageType,
-          attachments: attachments.length 
-        });
-  
-        const message = await chatService.sendMessage(chatId, content, messageType);
-        console.log('Message sent successfully:', message);
-        
-        // Add message to local state
-        addMessage(message);
-        // Update the chat in the context
-        // This will be handled by the ChatContext when the chat is created
-         } else {
+        resolvedChatId = getChatId(newChat);
 
-        console.log('Sending message:', { 
-          chatId, 
-          content, 
-          messageType,
-          attachments: attachments.length 
-        });
-  
-        const message = await chatService.sendMessage(chatId, content, messageType);
-        console.log('Message sent successfully:', message);
-        
-        // Add message to local state
-        addMessage(message);
+        if (!resolvedChatId) {
+          throw new Error('Failed to resolve chat id after creating private chat');
+        }
+
+        setChats(prev => prev.map(chat =>
+          chat.id === currentChat.id ? newChat : chat
+        ));
+        selectChat(newChat);
       }
+
+      if (!resolvedChatId) {
+        setError('No chat selected');
+        return;
+      }
+
+      console.log('Sending message:', {
+        chatId: resolvedChatId,
+        content,
+        messageType,
+        attachments: attachments.length
+      });
+
+      const message = await chatService.sendMessage(resolvedChatId, content, messageType);
+      console.log('Message sent successfully:', message);
+
+      addMessage(message);
       
       // Clear the input
       setNewMessage('');
@@ -411,14 +387,13 @@ const ChatWindow = () => {
       
       if (existingChat) {
         console.log('Found existing chat:', existingChat);
-        // Load existing chat
-        setCurrentChat(existingChat);
+        selectChat(existingChat);
       } else {
         console.log('Creating new private chat with user:', user.id);
-        // Create new private chat
         const newChat = await chatService.createPrivateChat(user.id);
         console.log('Created new chat:', newChat);
-        setCurrentChat(newChat);
+        setChats(prev => [newChat, ...prev]);
+        selectChat(newChat);
       }
       
       // Clear search
@@ -506,16 +481,18 @@ const ChatWindow = () => {
 
   // Mark messages as read
   useEffect(() => {
-    if (messages.length > 0) {
-      const unreadMessages = messages
-        .filter(msg => !msg.read && msg.senderId !== currentUser.id)
-        .map(msg => msg.id);
-      
-      if (unreadMessages.length > 0) {
-        markMessagesAsRead(chatId, unreadMessages);
-      }
+    if (!activeChatId || messages.length === 0) return;
+
+    const unreadMessages = messages
+      .filter(msg => !msg.read && msg.senderId !== currentUser.id)
+      .map(msg => msg.id);
+    
+    if (unreadMessages.length > 0) {
+      chatService.markMessagesAsRead(activeChatId).catch((err) => {
+        console.error('Error marking messages as read:', err);
+      });
     }
-  }, [messages, chatId, currentUser.id, markMessagesAsRead]);
+  }, [messages, activeChatId, currentUser.id]);
 
   // Add this function to handle scroll behavior
   const scrollToMessage = (messageId) => {

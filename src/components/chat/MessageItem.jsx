@@ -1,69 +1,86 @@
-import React from 'react';
-import { format } from 'date-fns';
-import { CheckCircle, Clock, AlertCircle } from 'lucide-react';
+import React, { useState } from 'react';
+import { FaCheck, FaCheckDouble } from 'react-icons/fa';
+import {
+  formatMessageTimeShort,
+  formatReadTimestamp,
+  getLatestReadAt,
+  getMessageTimestamp,
+  getReadEntries,
+  isMessageRead
+} from '../../utils/messageUtils';
 
-const MessageItem = ({ message, isOwnMessage }) => {
-  const getStatusIcon = () => {
-    switch (message.status) {
-      case 'sent':
-        return <CheckCircle size={12} className="text-gray-400" />;
-      case 'delivered':
-        return <CheckCircle size={12} className="text-blue-400" />;
-      case 'read':
-        return <CheckCircle size={12} className="text-green-400" />;
-      case 'sending':
-        return <Clock size={12} className="text-gray-400" />;
-      case 'failed':
-        return <AlertCircle size={12} className="text-red-400" />;
-      default:
-        return null;
-    }
+const MessageItem = ({ message, isOwnMessage, currentUserId }) => {
+  const [isHovered, setIsHovered] = useState(false);
+  const [showReadTooltip, setShowReadTooltip] = useState(false);
+
+  const excludeUserIds = [currentUserId, message.senderId, message.sender?.id].filter(Boolean);
+  const readUsers = getReadEntries(message, { excludeUserIds });
+  const latestReadAt = getLatestReadAt(message, excludeUserIds);
+  const sentTime = formatMessageTimeShort(getMessageTimestamp(message));
+  const readTooltipTitle = latestReadAt ? formatReadTimestamp(latestReadAt) : 'Sent';
+
+  const senderName = message.sender?.name || message.sender?.fullName || message.senderProfileName || 'User';
+  const senderInitial = senderName.charAt(0).toUpperCase();
+
+  const renderReadTooltip = () => {
+    if (!showReadTooltip || !isOwnMessage || readUsers.length === 0) return null;
+
+    return (
+      <div className="read-status-tooltip">
+        <div className="tooltip-header">Read by</div>
+        {readUsers.map((user) => (
+          <div key={user.userId} className="tooltip-user">
+            <span className="tooltip-user-name">{user.name}</span>
+            <span className="tooltip-time">{formatReadTimestamp(user.readAt)}</span>
+          </div>
+        ))}
+      </div>
+    );
   };
 
   return (
-    <div className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'} mb-4`}>
-      {!isOwnMessage && (
-        <div className="flex-shrink-0 mr-2">
-          {message.sender.avatar ? (
-            <img 
-              src={message.sender.avatar} 
-              alt={message.sender.name} 
-              className="w-8 h-8 rounded-full"
-            />
-          ) : (
-            <div className="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center">
-              <span className="text-sm font-semibold text-gray-600">
-                {message.sender.name.charAt(0).toUpperCase()}
-              </span>
+    <div
+      className={`message-container ${isOwnMessage ? 'own-message' : 'received-message'} ${isHovered ? 'is-hovered' : ''}`}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => {
+        setIsHovered(false);
+        setShowReadTooltip(false);
+      }}
+    >
+      <div className="message-stack">
+        {!isOwnMessage && (
+          <div className="message-sender-label">{senderName}</div>
+        )}
+
+        <div className="message-bubble-row">
+          {!isOwnMessage && (
+            <div className="message-item-avatar">
+              {message.sender?.avatar ? (
+                <img src={message.sender.avatar} alt={senderName} className="message-item-avatar-img" />
+              ) : (
+                <div className="message-item-avatar-fallback">{senderInitial}</div>
+              )}
             </div>
           )}
-        </div>
-      )}
-      
-      <div className={`max-w-xs md:max-w-md lg:max-w-lg ${isOwnMessage ? 'order-1' : 'order-2'}`}>
-        {!isOwnMessage && (
-          <div className="text-xs text-gray-500 mb-1 ml-1">
-            {message.sender.name}
-          </div>
-        )}
-        
-        <div className={`rounded-lg p-3 ${
-          isOwnMessage 
-            ? 'bg-blue-500 text-white rounded-br-none' 
-            : 'bg-white border border-gray-200 rounded-bl-none'
-        }`}>
-          <div className={`text-sm ${isOwnMessage ? 'text-white' : 'text-gray-800'}`}>
-            {message.content}
-          </div>
-          
-          <div className="flex justify-end items-center mt-1">
-            <span className={`text-xs mr-1 ${
-              isOwnMessage ? 'text-blue-100' : 'text-gray-500'
-            }`}>
-              {format(new Date(message.timestamp), 'h:mm a')}
-            </span>
-            
-            {isOwnMessage && getStatusIcon()}
+
+          <div className="message-content">
+            <div className="message-content-body">
+              <span className="message-text">{message.content}</span>
+              <div className="message-meta">
+                <span className="message-time">{sentTime}</span>
+                {isOwnMessage && (
+                  <span
+                    className={`message-read-indicator ${isMessageRead(message) ? 'is-read' : 'is-sent'}`}
+                    title={readTooltipTitle}
+                    onMouseEnter={() => setShowReadTooltip(true)}
+                    onMouseLeave={() => setShowReadTooltip(false)}
+                  >
+                    {isMessageRead(message) ? <FaCheckDouble size={11} /> : <FaCheck size={11} />}
+                  </span>
+                )}
+              </div>
+            </div>
+            {renderReadTooltip()}
           </div>
         </div>
       </div>

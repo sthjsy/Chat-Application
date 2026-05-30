@@ -8,7 +8,7 @@ import { FiSearch, FiPlus, FiFilter, FiUsers, FiX } from 'react-icons/fi';
 import { Form, InputGroup, Modal, Button, Badge } from 'react-bootstrap';
 import chatService from '../../services/chatService';
 import { WS_URLS } from '../../constants/websocket-urls';
-import userService from '../../services/userService';
+import { getChatId } from '../../utils/chatUtils';
 
 const ChatList = () => {
   const { 
@@ -32,6 +32,8 @@ const ChatList = () => {
   const [userSearchResults, setUserSearchResults] = useState([]);
   const [isSearchingUsers, setIsSearchingUsers] = useState(false);
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
+  const [userSearchError, setUserSearchError] = useState(null);
+  const [groupCreateError, setGroupCreateError] = useState(null);
   const scrollRef = useRef(null);
 
   // Log current chats whenever they change
@@ -64,7 +66,7 @@ const ChatList = () => {
           });
 
           // If this is a new chat, add it to the list
-          if (!chats.some(chat => chat.id === messageData.chatId)) {
+          if (!chats.some(chat => getChatId(chat) === messageData.chatId)) {
             console.log('ChatList: New chat detected, fetching chat details');
             chatService.getChat(messageData.chatId)
               .then(newChat => {
@@ -81,7 +83,7 @@ const ChatList = () => {
             console.log('ChatList: Updating existing chat with new message');
             setChats(prev => {
               const updatedChats = prev.map(chat => {
-                if (chat.id === messageData.chatId) {
+                if (getChatId(chat) === messageData.chatId) {
                   return {
                     ...chat,
                     lastMessage: messageData.content,
@@ -94,9 +96,9 @@ const ChatList = () => {
               });
               
               // Move the updated chat to the top
-              const updatedChat = updatedChats.find(chat => chat.id === messageData.chatId);
+              const updatedChat = updatedChats.find(chat => getChatId(chat) === messageData.chatId);
               if (updatedChat) {
-                const filteredChats = updatedChats.filter(chat => chat.id !== messageData.chatId);
+                const filteredChats = updatedChats.filter(chat => getChatId(chat) !== messageData.chatId);
                 return [updatedChat, ...filteredChats];
               }
               return updatedChats;
@@ -227,6 +229,7 @@ const ChatList = () => {
   const filteredChats = chats.filter(chat => {
     const searchLower = searchQuery.toLowerCase();
     return (
+      chat?.chatName?.toLowerCase().includes(searchLower) ||
       chat?.name?.toLowerCase().includes(searchLower) ||
       chat?.participants?.some(p => 
         p?.fullName?.toLowerCase().includes(searchLower) && p?.id !== currentUser?.id
@@ -237,22 +240,27 @@ const ChatList = () => {
 
   // Handle user search for group creation
   const handleUserSearch = async (query) => {
+    setUserSearchQuery(query);
+
     if (query.length < 2) {
       setUserSearchResults([]);
+      setUserSearchError(null);
       return;
     }
 
     setIsSearchingUsers(true);
+    setUserSearchError(null);
     try {
-      const results = await chatService.handleSearch(query);
-      // Filter out current user and already selected users
-      const filteredResults = results.filter(user => 
+      const results = await chatService.searchUsers(query);
+      const filteredResults = (results || []).filter(user => 
         user.id !== currentUser.id && 
         !selectedUsers.some(selected => selected.id === user.id)
       );
       setUserSearchResults(filteredResults);
     } catch (error) {
       console.error('Error searching users:', error);
+      setUserSearchResults([]);
+      setUserSearchError(error.message || 'Failed to search users');
     } finally {
       setIsSearchingUsers(false);
     }
@@ -263,6 +271,7 @@ const ChatList = () => {
     setSelectedUsers(prev => [...prev, user]);
     setUserSearchResults(prev => prev.filter(u => u.id !== user.id));
     setUserSearchQuery('');
+    setUserSearchError(null);
   };
 
   // Remove user from selected users
@@ -270,37 +279,53 @@ const ChatList = () => {
     setSelectedUsers(prev => prev.filter(user => user.id !== userId));
   };
 
+  const resetGroupModal = () => {
+    setGroupName('');
+    setGroupDescription('');
+    setSelectedUsers([]);
+    setUserSearchQuery('');
+    setUserSearchResults([]);
+    setUserSearchError(null);
+    setGroupCreateError(null);
+  };
+
+  const openGroupModal = () => {
+    resetGroupModal();
+    setShowCreateGroupModal(true);
+  };
+
+  const closeGroupModal = () => {
+    setShowCreateGroupModal(false);
+    resetGroupModal();
+  };
+
   // Create group chat
   const handleCreateGroup = async () => {
     if (!groupName.trim() || selectedUsers.length === 0) {
+      setGroupCreateError('Enter a group name and add at least one participant.');
       return;
     }
 
     setIsCreatingGroup(true);
+    setGroupCreateError(null);
     try {
       const groupData = {
-        name: groupName,
-        description: groupDescription,
+        name: groupName.trim(),
+        description: groupDescription.trim(),
         participantIds: selectedUsers.map(user => user.id),
+        currentUserId: currentUser.id,
         isPublic: false
       };
 
       const newGroupChat = await chatService.createGroupChat(groupData);
       console.log('Group chat created:', newGroupChat);
       
-      // Add the new group chat to the list
       setChats(prev => [newGroupChat, ...prev]);
-      
-      // Select the new group chat
       selectChat(newGroupChat);
-      
-      // Reset form and close modal
-      setGroupName('');
-      setGroupDescription('');
-      setSelectedUsers([]);
-      setShowCreateGroupModal(false);
+      closeGroupModal();
     } catch (error) {
       console.error('Error creating group chat:', error);
+      setGroupCreateError(error.message || 'Failed to create group chat');
     } finally {
       setIsCreatingGroup(false);
     }
@@ -315,7 +340,7 @@ const ChatList = () => {
             variant="outline-primary" 
             size="sm" 
             className="rounded-circle p-1"
-            onClick={() => setShowCreateGroupModal(true)}
+            onClick={openGroupModal}
             title="Create Group Chat"
           >
             <FiPlus size={16} />
@@ -375,7 +400,7 @@ const ChatList = () => {
                 key={chat.id}
                 chat={chat}
                 chatId={chat.id}
-                isSelected={currentChat?.id === chat.id}
+                isSelected={getChatId(currentChat) === getChatId(chat)}
                 onClick={() => selectChat(chat)}
                 userStatus={userStatus}
               />
@@ -385,11 +410,14 @@ const ChatList = () => {
       </div>
 
       {/* Create Group Chat Modal */}
-      <Modal show={showCreateGroupModal} onHide={() => setShowCreateGroupModal(false)}>
+      <Modal show={showCreateGroupModal} onHide={closeGroupModal}>
         <Modal.Header closeButton>
           <Modal.Title>Create Group Chat</Modal.Title>
         </Modal.Header>
         <Modal.Body>
+          {groupCreateError && (
+            <div className="alert alert-danger py-2">{groupCreateError}</div>
+          )}
           <Form>
             <Form.Group className="mb-3">
               <Form.Label>Group Name</Form.Label>
@@ -435,6 +463,14 @@ const ChatList = () => {
                     <span className="visually-hidden">Loading...</span>
                   </div>
                 </div>
+              )}
+              
+              {userSearchError && (
+                <div className="text-danger small mt-2">{userSearchError}</div>
+              )}
+
+              {!userSearchError && userSearchQuery.length >= 2 && !isSearchingUsers && userSearchResults.length === 0 && (
+                <div className="text-muted small mt-2">No users found</div>
               )}
               
               {userSearchResults.length > 0 && (
@@ -490,7 +526,7 @@ const ChatList = () => {
           </Form>
         </Modal.Body>
         <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowCreateGroupModal(false)}>
+          <Button variant="secondary" onClick={closeGroupModal}>
             Cancel
           </Button>
           <Button 

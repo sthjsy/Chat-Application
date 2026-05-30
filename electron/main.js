@@ -22,7 +22,7 @@ function createWindow() {
 
   const startURL = isDev
     ? 'http://localhost:3000'
-    : `file://${path.join(__dirname, '../build/index.html')}`;
+    : path.join(__dirname, '../build/index.html');
 
   mainWindow.loadURL(startURL);
 
@@ -49,6 +49,14 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+  mainWindow.webContents.on("did-fail-load", (e, code, desc) => {
+    console.error("LOAD FAILED:", code, desc);
+  });
+  
+  mainWindow.webContents.on("console-message", (_, level, message) => {
+    console.log("RENDERER:", message);
+  });
+  
 }
 
 // App lifecycle

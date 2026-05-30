@@ -1,9 +1,37 @@
 import api from './api';
-import axios from 'axios';
-import { API_URL } from '../constants/api';
-import authService from './authService';
+import { normalizeChat, normalizeChats } from '../utils/chatUtils';
 
 const TOKEN = () => localStorage.getItem('token');
+
+const requireChatId = (chatId, action) => {
+  const resolvedChatId = chatId ?? null;
+  if (resolvedChatId == null || resolvedChatId === '') {
+    throw new Error(`chatId is required to ${action}`);
+  }
+  return resolvedChatId;
+};
+
+const searchUsersRequest = async (query) => {
+  const trimmedQuery = query?.trim();
+  if (!trimmedQuery || trimmedQuery.length < 2) {
+    return [];
+  }
+
+  const encoded = encodeURIComponent(trimmedQuery);
+
+  try {
+    const response = await api.get(`/users/search/${encoded}`);
+    const data = response.data;
+    return Array.isArray(data) ? data : (data?.content ?? data?.users ?? []);
+  } catch (pathError) {
+    if (pathError.response?.status && pathError.response.status !== 404) {
+      throw pathError;
+    }
+    const response = await api.get(`/users/search?q=${encoded}`);
+    const data = response.data;
+    return Array.isArray(data) ? data : (data?.content ?? data?.users ?? []);
+  }
+};
 
 const chatService = {
   /**
@@ -13,7 +41,7 @@ const chatService = {
   getChats: async () => {
     try {
       const response = await api.get('/chats');
-      return response.data;
+      return normalizeChats(response.data);
     } catch (error) {
       console.error('Error fetching chats:', error);
       throw new Error('Failed to fetch chats');
@@ -26,7 +54,7 @@ const chatService = {
   getPrivateChats: async () => {
     try {
       const response = await api.get('/chats/private');
-      return response.data;
+      return normalizeChats(response.data);
     } catch (error) {
       console.error('Error fetching private chats:', error);
       throw error;
@@ -39,7 +67,7 @@ const chatService = {
   getGroupChats: async () => {
     try {
       const response = await api.get('/chats/group');
-      return response.data;
+      return normalizeChats(response.data);
     } catch (error) {
       console.error('Error fetching group chats:', error);
       throw error;
@@ -53,7 +81,7 @@ const chatService = {
   createPrivateChat: async (userId) => {
     try {
       const response = await api.post(`/chats/private/${userId}`);
-      return response.data;
+      return normalizeChat(response.data);
     } catch (error) {
       console.error('Error creating private chat:', error);
       throw new Error('Failed to create private chat');
@@ -74,19 +102,32 @@ const chatService = {
   createGroupChat: async (groupData) => {
     try {
       console.log('Creating group chat with data:', groupData);
-      
+
+      const participantIds = [
+        ...new Set(
+          [
+            ...(groupData.participantIds || []),
+            ...(groupData.currentUserId ? [groupData.currentUserId] : [])
+          ].filter((id) => id != null && id !== '')
+        )
+      ];
+
+      if (participantIds.length < 2) {
+        throw new Error('Select at least one other participant for the group');
+      }
+
       const payload = {
-        chatName: groupData.name,
+        chatName: groupData.name || groupData.chatName,
         description: groupData.description || '',
         chatType: 'GROUP',
         isPublic: groupData.isPublic ?? false,
-        participantIds: groupData.participantIds
+        participantIds
       };
 
       console.log('Sending group creation request with payload:', payload);
       const response = await api.post('/chats/group', payload);
       console.log('Group chat created successfully:', response.data);
-      return response.data;
+      return normalizeChat(response.data);
     } catch (error) {
       console.error('Error creating group chat:', error);
       throw new Error(error.response?.data?.message || 'Failed to create group chat');
@@ -104,7 +145,7 @@ const chatService = {
   createChannel: async (channelData) => {
     try {
       const response = await api.post('/chats/channel', channelData);
-      return response.data;
+      return normalizeChat(response.data);
     } catch (error) {
       console.error('Error creating channel:', error);
       throw new Error('Failed to create channel');
@@ -118,7 +159,8 @@ const chatService = {
    */
   getMessages: async (chatId) => {
     try {
-      const response = await api.get(`/messages/chat/${chatId}`);
+      const resolvedChatId = requireChatId(chatId, 'fetch messages');
+      const response = await api.get(`/messages/chat/${resolvedChatId}`);
       return response.data;
     } catch (error) {
       console.error('Error fetching messages:', error);
@@ -135,8 +177,13 @@ const chatService = {
    */
   sendMessage: async (chatId, content, messageType = 'TEXT') => {
     try {
-      console.log('Sending message:', { chatId, content, messageType });
-      const response = await api.post(`/messages/chat`, { chatId, content, messageType });
+      const resolvedChatId = requireChatId(chatId, 'send message');
+      console.log('Sending message:', { chatId: resolvedChatId, content, messageType });
+      const response = await api.post(`/messages/chat`, {
+        chatId: resolvedChatId,
+        content,
+        messageType
+      });
       console.log('Message sent successfully:', response.data);
       return response.data;
     } catch (error) {
@@ -155,9 +202,14 @@ const chatService = {
    */
   editMessage: async (chatId, messageId, newContent, messageType = 'TEXT') => {
     try {
-      console.log('Editing message:', { messageId, newContent, messageType,chatId,messageId });
-      const response = await api.put(`/messages/update/message`,
-        { content: newContent, messageId, chatId,messageType });
+      const resolvedChatId = requireChatId(chatId, 'edit message');
+      console.log('Editing message:', { messageId, newContent, messageType, chatId: resolvedChatId });
+      const response = await api.put(`/messages/update/message`, {
+        content: newContent,
+        messageId,
+        chatId: resolvedChatId,
+        messageType
+      });
       console.log('Message edited successfully:', response.data);
       return response.data;
     } catch (error) {
@@ -174,9 +226,11 @@ const chatService = {
    */
   deleteMessage: async (chatId, messageId) => {
     try {
-      console.log('Deleting message:', messageId);
-      const response = await api.delete(`/messages/delete/message/${messageId}`, 
-        { messageId:messageId, chatId });
+      const resolvedChatId = requireChatId(chatId, 'delete message');
+      console.log('Deleting message:', { messageId, chatId: resolvedChatId });
+      const response = await api.delete(`/messages/delete/message/${messageId}`, {
+        data: { messageId, chatId: resolvedChatId }
+      });
       console.log('Message deleted successfully'+response);
       console.log('Message deleted successfully'+response.data);
       return response.data;
@@ -193,8 +247,9 @@ const chatService = {
    */
   markMessagesAsRead: async (chatId) => {
     try {
-      console.log("markMessagesAsRead :: chatId :: "+chatId);
-      const response = await api.post(`/messages/chat/read-all`, { chatId });
+      const resolvedChatId = requireChatId(chatId, 'mark messages as read');
+      console.log('markMessagesAsRead :: chatId ::', resolvedChatId);
+      const response = await api.post(`/messages/chat/read-all`, { chatId: resolvedChatId });
       console.log("markMessagesAsRead :: "+response.data);
       return response.data;
     } catch (error) {
@@ -212,7 +267,7 @@ const chatService = {
   addParticipant: async (chatId, userId) => {
     try {
       const response = await api.post(`/chats/${chatId}/participants`, { userId });
-      return response.data;
+      return normalizeChat(response.data);
     } catch (error) {
       console.error('Error adding participant:', error);
       throw new Error('Failed to add participant');
@@ -228,7 +283,7 @@ const chatService = {
   removeParticipant: async (chatId, userId) => {
     try {
       const response = await api.delete(`/chats/${chatId}/participants/${userId}`);
-      return response.data;
+      return normalizeChat(response.data);
     } catch (error) {
       console.error('Error removing participant:', error);
       throw new Error('Failed to remove participant');
@@ -244,7 +299,7 @@ const chatService = {
   addAdmin: async (chatId, userId) => {
     try {
       const response = await api.post(`/chats/${chatId}/admins`, { userId });
-      return response.data;
+      return normalizeChat(response.data);
     } catch (error) {
       console.error('Error adding admin:', error);
       throw new Error('Failed to add admin');
@@ -260,7 +315,7 @@ const chatService = {
   removeAdmin: async (chatId, userId) => {
     try {
       const response = await api.delete(`/chats/${chatId}/admins/${userId}`);
-      return response.data;
+      return normalizeChat(response.data);
     } catch (error) {
       console.error('Error removing admin:', error);
       throw new Error('Failed to remove admin');
@@ -275,7 +330,7 @@ const chatService = {
   createNewChat: async (userId) => {
     try {
       const response = await api.post('/chats', { userId });
-      return response.data;
+      return normalizeChat(response.data);
     } catch (error) {
       console.error('Error creating chat:', error);
       throw error;
@@ -290,11 +345,19 @@ const chatService = {
    */
   addMembers: async (chatId, userIds) => {
     try {
-      const response = await api.post(`/chats/${chatId}/members`, { userIds });
-      return response.data;
+      const resolvedChatId = requireChatId(chatId, 'add group members');
+      const ids = Array.isArray(userIds) ? userIds : [userIds];
+
+      try {
+        const response = await api.post(`/chats/${resolvedChatId}/participants`, { userIds: ids });
+        return normalizeChat(response.data);
+      } catch (participantsError) {
+        const response = await api.post(`/chats/${resolvedChatId}/members`, { userIds: ids });
+        return normalizeChat(response.data);
+      }
     } catch (error) {
       console.error('Error adding group members:', error);
-      throw error;
+      throw new Error(error.response?.data?.message || 'Failed to add group members');
     }
   },
 
@@ -337,11 +400,10 @@ const chatService = {
    */
   searchUsers: async (query) => {
     try {
-      const response = await api.get(`/api/users/search?q=${encodeURIComponent(query)}`);
-      return response.data;
+      return await searchUsersRequest(query);
     } catch (error) {
       console.error('Error searching users:', error);
-      throw new Error('Failed to search users');
+      throw new Error(error.response?.data?.message || 'Failed to search users');
     }
   },
 
@@ -353,7 +415,7 @@ const chatService = {
   getChatDetails: async (chatId) => {
     try {
       const response = await api.get(`/chats/${chatId}`);
-      return response.data;
+      return normalizeChat(response.data);
     } catch (error) {
       console.error('Error fetching chat details:', error);
       throw error;
@@ -368,7 +430,7 @@ const chatService = {
   getChat: async (chatId) => {
     try {
       const response = await api.get(`/chats/${chatId}`);
-      return response.data;
+      return normalizeChat(response.data);
     } catch (error) {
       console.error('Error fetching chat:', error);
       throw error;
@@ -380,7 +442,7 @@ const chatService = {
       console.log("updateChat :: chatId :: "+chatId);
       const response = await api.put(`/chats/${chatId}`, data);
       console.log("updateChat :: "+response.data);
-      return response.data;
+      return normalizeChat(response.data);
     } catch (error) {
       console.log("updateChat :: error :: "+error);
       throw new Error(error.response?.data?.message || 'Failed to update chat');
@@ -389,8 +451,9 @@ const chatService = {
 
   markAsRead: async (chatId) => {
     try {
-      console.log("markAsRead :: chatId :: "+chatId);
-      const response = await api.put(`/messages/chat/read-all`, { chatId });
+      const resolvedChatId = requireChatId(chatId, 'mark chat as read');
+      console.log('markAsRead :: chatId ::', resolvedChatId);
+      const response = await api.put(`/messages/chat/read-all`, { chatId: resolvedChatId });
       console.log("markAsRead :: "+response.data);
       return response.data;
     } catch (error) {
@@ -408,11 +471,12 @@ const chatService = {
    */
   addReaction: async (chatId, messageId, emoji) => {
     try {
-      console.log('Adding reaction:', { chatId, messageId, emoji });
+      const resolvedChatId = requireChatId(chatId, 'add reaction');
+      console.log('Adding reaction:', { chatId: resolvedChatId, messageId, emoji });
       const response = await api.post(`/messages/reactions`, { 
         reactionType: emoji,
         messageId,
-        chatId
+        chatId: resolvedChatId
       });
       console.log('Reaction added successfully:', response.data);
       return response.data;
@@ -431,9 +495,10 @@ const chatService = {
    */
   removeReaction: async (chatId, messageId, emoji) => {
     try {
-      console.log('Removing reaction:', { chatId, messageId, emoji });
+      const resolvedChatId = requireChatId(chatId, 'remove reaction');
+      console.log('Removing reaction:', { chatId: resolvedChatId, messageId, emoji });
       const response = await api.delete(`/messages/reactions`, {
-        data: { chatId, reactionType:emoji,messageId }
+        data: { chatId: resolvedChatId, reactionType: emoji, messageId }
       });
       console.log('Reaction removed successfully:', response.data);
       return response.data;
@@ -453,11 +518,12 @@ const chatService = {
    */
   editReaction: async (chatId, messageId, oldEmoji, newEmoji) => {
     try {
-      console.log('Editing reaction:', { chatId, messageId, oldEmoji, newEmoji });
+      const resolvedChatId = requireChatId(chatId, 'edit reaction');
+      console.log('Editing reaction:', { chatId: resolvedChatId, messageId, oldEmoji, newEmoji });
       const response = await api.put(`/messages/reactions`, { 
-        reactionType:oldEmoji,
+        reactionType: oldEmoji,
         messageId,
-        chatId
+        chatId: resolvedChatId
       });
       console.log('Reaction edited successfully:', response.data);
       return response.data;
@@ -494,27 +560,36 @@ const chatService = {
       console.log('Getting/Creating private chat with user:', userId);
       const response = await api.post(`/chats/private/${userId}`);
       console.log('Private chat result:', response.data);
-      return response.data;
+      return normalizeChat(response.data);
     } catch (error) {
       console.error('Error getting/creating private chat:', error);
       throw error;
     }
   },
 
-  handleSearch: async (query) => {
+  handleSearch: searchUsersRequest,
+
+  leaveGroupChat: async (chatId) => {
     try {
-      console.log("handleSearch :: query :: "+query);
-      const response = await axios.get(`${API_URL}/users/search/${query}`, {
-        headers: {
-          Authorization: `Bearer ${authService.getToken()}`
-        }
-      });
-      return response.data;
+      const resolvedChatId = requireChatId(chatId, 'leave group chat');
+      await api.post(`/chats/${resolvedChatId}/leave`);
     } catch (error) {
-      console.error('Error searching chats:', error);
-      throw error;
+      console.error('Error leaving group chat:', error);
+      throw new Error(error.response?.data?.message || 'Failed to leave group chat');
     }
-  }
+  },
+
+  addGroupMembers: async (chatId, userIds) => {
+    return chatService.addMembers(chatId, userIds);
+  },
+
+  removeGroupMember: async (chatId, userId) => {
+    return chatService.removeMember(chatId, userId);
+  },
+
+  updateGroupSettings: async (chatId, settings) => {
+    return chatService.updateChatSettings(chatId, settings);
+  },
 };
 
 export default chatService;

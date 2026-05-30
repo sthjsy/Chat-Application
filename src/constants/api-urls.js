@@ -1,5 +1,6 @@
 // API Base URL
 export const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080/api';
+// export const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://15.207.20.44:8080/api';
 
 // Auth URLs
 export const AUTH_URLS = {
@@ -45,6 +46,7 @@ export const CHAT_URLS = {
 // WebSocket URLs
 export const WS_URLS = {
   CONNECT: process.env.REACT_APP_WS_URL || 'ws://localhost:8080/ws',
+  // CONNECT: process.env.REACT_APP_WS_URL || 'ws://15.207.20.44:8080/ws',
   SUBSCRIBE: {
     USER_STATUS: (userId) => `/topic/user/${userId}/status`,
     CHAT_MESSAGES: (chatId) => `/topic/chat/${chatId}/messages`,
