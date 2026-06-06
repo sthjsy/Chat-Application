@@ -139,6 +139,17 @@ export const SocketProvider = ({ children }) => {
           }
         });
 
+        // Subscribe to notifications
+        client.subscribe(WS_URLS.SUBSCRIBE.NOTIFICATIONS(currentUser.id), (message) => {
+          try {
+            const notification = JSON.parse(message.body);
+            console.log('Received notification:', notification);
+            setNotifications(prev => [notification, ...prev]);
+          } catch (error) {
+            console.error('Error handling notification:', error);
+          }
+        });
+
         // Notify server about connection
         client.publish({
           destination: WS_URLS.PUBLISH.ADD_USER,
@@ -770,27 +781,6 @@ export const SocketProvider = ({ children }) => {
     });
   }, [stompClient, connected, currentUser]);
 
-  // Initialize call
-  const initiateCall = useCallback((chatId, callType = 'VIDEO') => {
-    if (!stompClient || !connected) return;
-
-    const sessionId = `call-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    
-    console.log('Initiating call:', { chatId, callType, sessionId });
-    stompClient.publish({
-      destination: WS_URLS.PUBLISH.CALL_SIGNAL(chatId),
-      body: JSON.stringify({
-        type: 'offer',
-        callType: callType,
-        sessionId: sessionId,
-        senderId: currentUser.id,
-        senderName: currentUser.username
-      })
-    });
-
-    return sessionId;
-  }, [stompClient, connected, currentUser]);
-
   // Value to be provided by the context
   const value = {
     connected,
@@ -807,7 +797,6 @@ export const SocketProvider = ({ children }) => {
     markNotificationAsRead,
     updateStatus,
     subscribeToChat,
-    initiateCall,
     createPrivateChat,
     createGroupChat,
     updateChat,
@@ -823,6 +812,17 @@ export const SocketProvider = ({ children }) => {
       console.log('Subscribing to:', destination);
       return stompClient.subscribe(destination, callback);
     }, [stompClient]),
+    publish: useCallback((destination, body) => {
+      if (!stompClient || !connected) {
+        console.error('STOMP client not connected');
+        return;
+      }
+      console.log('Publishing to:', destination, 'body:', body);
+      stompClient.publish({
+        destination,
+        body: typeof body === 'string' ? body : JSON.stringify(body)
+      });
+    }, [stompClient, connected]),
     unsubscribe: useCallback((subscription) => {
       if (subscription) {
         console.log('Unsubscribing from:', subscription.id);

@@ -18,7 +18,12 @@ export const WS_URLS = {
     USER_STATUS: '/topic/user.status',
     ERRORS: '/topic/errors',
     NOTIFICATIONS: (userId) => `/user/${userId}/queue/notifications`,
-    CALL_SIGNALING: (chatId) => `/topic/chat/${chatId}/call`
+    CALL_SIGNALING: (chatId) => `/topic/chat/${chatId}/call`,
+    CALL_INCOMING: '/user/queue/call/incoming',
+    CALL_OFFER: '/user/queue/offer',
+    CALL_ANSWER: '/user/queue/answer',
+    CALL_ICE_CANDIDATE: '/user/queue/ice-candidate',
+    CALL_HANGUP: '/user/queue/hangup',
   },
 
   // Publishing endpoints
@@ -33,7 +38,12 @@ export const WS_URLS = {
     TYPING_INDICATOR: '/app/message.typing',
     USER_STATUS: '/app/chat.userStatus',
     ADD_USER: '/app/chat.addUser',
-    CALL_SIGNAL: (chatId) => `/app/call/${chatId}/signal`
+    CALL_SIGNAL: (chatId) => `/app/call/${chatId}/signal`,
+    CALL_INCOMING: '/app/call/incoming',
+    CALL_OFFER: '/app/offer',
+    CALL_ANSWER: '/app/answer',
+    CALL_ICE_CANDIDATE: '/app/ice-candidate',
+    CALL_HANGUP: '/app/hangup',
   },
 
   // Chat Events

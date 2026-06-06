@@ -24,7 +24,7 @@ const App = () => {
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <>
         <ToastContainer
-          position="top-right"
+          position="bottom-right"
           autoClose={5000}
           hideProgressBar={false}
           newestOnTop
@@ -33,6 +33,7 @@ const App = () => {
           pauseOnFocusLoss
           draggable
           pauseOnHover
+          style={{ zIndex: 9998 }}
         />
         <AuthProvider>
           <SocketProvider>
@@ -41,23 +42,18 @@ const App = () => {
                 <Routes>
                   <Route path="/login" element={<Login />} />
                   <Route path="/register" element={<Register />} />
-                  <Route
-                    path="/"
-                    element={
-                      <ProtectedRoute>
-                        <AppLayout />
-                      </ProtectedRoute>
-                    }
-                  >
-                    <Route index element={<Navigate to="/chat" replace />} />
-                    <Route path="chat" element={<Chat />} />
-                    <Route path="chat/:chatId" element={<Chat />} />
-                    <Route path="activity" element={<Activity />} />
-                    <Route path="announcement" element={<Announcement />} />
-                    <Route path="calendar" element={<Calendar />} />
-                    <Route path="call" element={<Call />} />
-                    <Route path="video-call/:callId" element={<VideoCall />} />
-                    <Route path="audio-call/:callId" element={<AudioCall />} />
+                  <Route element={<ProtectedRoute />}>
+                    <Route element={<AppLayout />}>
+                      <Route index element={<Navigate to="/chat" replace />} />
+                      <Route path="chat" element={<Chat />} />
+                      <Route path="chat/:chatId" element={<Chat />} />
+                      <Route path="activity" element={<Activity />} />
+                      <Route path="announcement" element={<Announcement />} />
+                      <Route path="calendar" element={<Calendar />} />
+                      <Route path="call" element={<Call />} />
+                      <Route path="video-call/:callId" element={<VideoCall />} />
+                      <Route path="audio-call/:callId" element={<AudioCall />} />
+                    </Route>
                   </Route>
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>

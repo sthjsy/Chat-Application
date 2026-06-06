@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSocket } from '../../contexts/SocketContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { useCall } from '../../contexts/CallContext';
 import { FaSearch, FaUserCircle, FaPaperclip, FaSmile, FaPaperPlane, FaTimes, FaUsers, FaCog, FaEllipsisV, FaEnvelope, FaPhone, FaMapMarkerAlt, FaClock } from 'react-icons/fa';
 import axios from 'axios';
 import EmojiPicker from 'emoji-picker-react';
 import Message from './Message';
 import { useChat } from '../../contexts/ChatContext';
-import { FiSend, FiPaperclip, FiSmile, FiVideo, FiPhone, FiMoreVertical, FiUser, FiSettings, FiLogOut } from 'react-icons/fi';
+import { FiSend, FiPaperclip, FiSmile, FiVideo, FiPhone as FiPhoneIcon, FiMoreVertical, FiUser, FiSettings, FiLogOut } from 'react-icons/fi';
 import { Container, Row, Col, Form, InputGroup, Button } from 'react-bootstrap';
 import '../../styles/chat.css';
 import chatService from '../../services/chatService';
@@ -25,6 +26,7 @@ const ChatWindow = () => {
     unsubscribe,
     userStatuses
   } = useSocket();
+  const { startCall } = useCall();
   const { 
     currentChat, 
     messages,
@@ -346,35 +348,9 @@ const ChatWindow = () => {
     }
   };
 
-  // Handle user search
-  const handleSearch = async (query) => {
+  // Handle message search
+  const handleMessageSearch = (query) => {
     setSearchQuery(query);
-    setShowSearchResults(true);
-
-    // Clear existing timeout
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
-    }
-
-    // Set new timeout for debouncing
-    searchTimeoutRef.current = setTimeout(async () => {
-      if (!query.trim()) {
-        setSearchResults([]);
-        return;
-      }
-
-      try {
-        console.log('Searching users with query:', query);
-        const response = await axios.get(`/api/users/search/${query}`, {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-        });
-        console.log('Search results:', response.data);
-        setSearchResults(response.data);
-      } catch (err) {
-        console.error('Error searching users:', err);
-        setError('Failed to search users');
-      }
-    }, 300); // 300ms debounce
   };
 
   // Handle user selection from search
@@ -555,6 +531,14 @@ const ChatWindow = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  const handleStartCall = (type) => {
+    if (!currentChat) return;
+    const otherParticipant = currentChat.participants.find(p => p.id !== currentUser.id);
+    if (otherParticipant) {
+      startCall(otherParticipant, type, false);
+    }
+  };
 
   if (!currentChat) {
     return (
@@ -750,14 +734,14 @@ const ChatWindow = () => {
                   <button 
                     className="btn btn-light btn-sm rounded-circle p-2"
                     title="Audio Call"
-                    onClick={() => console.log('Start audio call')}
+                    onClick={() => handleStartCall('AUDIO')}
                   >
-                    <FiPhone size={16} />
+                    <FiPhoneIcon size={16} />
                   </button>
                   <button 
                     className="btn btn-light btn-sm rounded-circle p-2"
                     title="Video Call"
-                    onClick={() => console.log('Start video call')}
+                    onClick={() => handleStartCall('VIDEO')}
                   >
                     <FiVideo size={16} />
                   </button>
@@ -982,12 +966,12 @@ const ChatWindow = () => {
                   type="text"
                   placeholder="Search messages..."
                   value={searchQuery}
-                  onChange={(e) => handleSearch(e.target.value)}
+                  onChange={(e) => handleMessageSearch(e.target.value)}
                   autoFocus
                 />
               </div>
               <div className="search-results">
-                {searchResults.map((message) => (
+                {filteredMessages.map((message) => (
                   <div
                     key={message.id}
                     className="search-result-item"
@@ -1004,7 +988,7 @@ const ChatWindow = () => {
                     </div>
                   </div>
                 ))}
-                {searchQuery && searchResults.length === 0 && (
+                {searchQuery && filteredMessages.length === 0 && (
                   <div className="text-center text-muted py-4">
                     No messages found
                   </div>

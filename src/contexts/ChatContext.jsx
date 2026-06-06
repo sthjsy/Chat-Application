@@ -1,10 +1,13 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from './AuthContext';
 import chatService from '../services/chatService';
 import { useSocket } from './SocketContext';
-import axios from 'axios';
-import { websocketService } from '../services/websocketService';
+import { useNavigate } from 'react-router-dom';
 import { getChatId } from '../utils/chatUtils';
+import { WS_URLS } from '../constants/websocket-urls';
+import { toast } from 'react-toastify';
+import NotificationToast from '../components/common/NotificationToast';
+import '../components/common/NotificationToast.css';
 
 const ChatContext = createContext(null);
 
@@ -18,7 +21,7 @@ export const useChat = () => {
 
 export const ChatProvider = ({ children }) => {
   const { currentUser } = useAuth();
-  const { socket, connected } = useSocket();
+  const { subscribe, connected } = useSocket();
   const [chats, setChats] = useState([]);
   const [currentChat, setCurrentChat] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -26,6 +29,18 @@ export const ChatProvider = ({ children }) => {
   const [error, setError] = useState(null);
   const [unreadCounts, setUnreadCounts] = useState({});
   const [userStatuses, setUserStatuses] = useState({});
+  const navigate = useNavigate();
+  const currentChatRef = useRef(currentChat);
+  const chatsRef = useRef(chats);
+  const seenMessageIdsRef = useRef(new Set());
+
+  useEffect(() => {
+    currentChatRef.current = currentChat;
+  }, [currentChat]);
+
+  useEffect(() => {
+    chatsRef.current = chats;
+  }, [chats]);
 
   // Function to sort chats by last message time
   const sortChatsByLastMessage = (chatsToSort) => {
@@ -111,162 +126,163 @@ export const ChatProvider = ({ children }) => {
     fetchMessages();
   }, [currentChat]);
 
-  // Handle real-time messages
+  const showMessageNotification = useCallback((message) => {
+    const chatList = chatsRef.current;
+    const chatInfo = chatList.find((c) => c.id === message.chatId);
+    let senderName = message.senderName || 'Someone';
+
+    if (!message.senderName && chatInfo) {
+      if (chatInfo.chatType === 'PRIVATE') {
+        const otherUser = chatInfo.participants?.find((p) => p.id === message.senderId);
+        if (otherUser) senderName = otherUser.fullName || otherUser.username;
+      } else {
+        senderName = chatInfo.chatName || senderName;
+      }
+    }
+
+    const messagePreview =
+      message.messageType === 'TEXT'
+        ? message.content
+        : `Sent a ${(message.messageType || 'message').toLowerCase()}`;
+
+    toast(
+      ({ closeToast }) => (
+        <NotificationToast
+          user={{ name: senderName }}
+          message={messagePreview}
+          onNotificationClick={() => {
+            const targetChat = chatsRef.current.find((c) => c.id === message.chatId);
+            if (targetChat) {
+              setCurrentChat(targetChat);
+              navigate('/chat');
+            }
+          }}
+          onReply={(replyText) => {
+            chatService.sendMessage(message.chatId, replyText).catch((err) => {
+              console.error('Failed to send reply from notification:', err);
+            });
+          }}
+          closeToast={closeToast}
+        />
+      ),
+      {
+        closeOnClick: false,
+        autoClose: 5000,
+        pauseOnHover: true,
+        draggable: true,
+        style: { padding: 0 },
+      }
+    );
+  }, [navigate]);
+
+  // Handle real-time messages via STOMP
   useEffect(() => {
-    if (!socket || !connected) return;
+    if (!connected || !currentUser?.id) return undefined;
 
     const handleNewMessage = (message) => {
-      console.log('Received new message:', message);
-      
-      // Only append message to messages state if it belongs to the current chat
-      if (currentChat && message.chatId === getChatId(currentChat)) {
-        setMessages(prev => [...prev, message]);
+      if (!message?.id) return;
+      if (seenMessageIdsRef.current.has(message.id)) return;
+      seenMessageIdsRef.current.add(message.id);
+      if (seenMessageIdsRef.current.size > 300) {
+        seenMessageIdsRef.current = new Set([...seenMessageIdsRef.current].slice(-150));
       }
-      
-      // Update chat's last message and timestamp
-      setChats(prev => {
-        const updatedChats = prev.map(chat => 
+
+      console.log('[ChatContext] Received new message:', message);
+
+      const openChat = currentChatRef.current;
+      const isCurrentChat = openChat && message.chatId === getChatId(openChat);
+
+      if (!isCurrentChat && message.senderId !== currentUser.id) {
+        showMessageNotification(message);
+      }
+
+      setChats((prev) => {
+        const updatedChats = prev.map((chat) =>
           chat.id === message.chatId
             ? {
                 ...chat,
                 lastMessage: message.content,
-                lastMessageTime: message.createdAt,
-                updatedAt: message.createdAt,
-                unreadCount: getChatId(chat) === getChatId(currentChat) ? 0 : (chat.unreadCount || 0) + 1
+                lastMessageTime: message.createdAt || message.timestamp,
+                updatedAt: message.createdAt || message.timestamp,
+                unreadCount: isCurrentChat ? 0 : (chat.unreadCount || 0) + 1,
               }
             : chat
         );
 
-        // Find the chat that was updated
-        const updatedChat = updatedChats.find(chat => chat.id === message.chatId);
-        
-        // If chat exists, move it to the top
+        const updatedChat = updatedChats.find((chat) => chat.id === message.chatId);
         if (updatedChat) {
-          const filteredChats = updatedChats.filter(chat => chat.id !== message.chatId);
-          return [updatedChat, ...filteredChats];
+          return [updatedChat, ...updatedChats.filter((chat) => chat.id !== message.chatId)];
         }
-
         return updatedChats;
       });
 
-      // If this is a new chat, add it to the list
-      if (!chats.some(chat => chat.id === message.chatId)) {
-        // Fetch the chat details and add it to the list
-        chatService.getChat(message.chatId)
-          .then(newChat => {
+      if (!chatsRef.current.some((chat) => chat.id === message.chatId)) {
+        chatService
+          .getChat(message.chatId)
+          .then((newChat) => {
             if (newChat) {
-              setChats(prev => [newChat, ...prev]);
+              setChats((prev) => [newChat, ...prev.filter((c) => c.id !== newChat.id)]);
             }
           })
-          .catch(error => {
-            console.error('Error fetching new chat:', error);
-          });
+          .catch((err) => console.error('Error fetching new chat:', err));
       }
     };
 
-    const handleMessageUpdate = (updatedMessage) => {
-      // Only update message in messages state if it belongs to the current chat
-      if (currentChat && updatedMessage.chatId === currentChat.id) {
-        setMessages(prev => prev.map(msg => 
-          msg.id === updatedMessage.id ? updatedMessage : msg
-        ));
-      }
+    const handleChatEvent = (eventData) => {
+      if (eventData.type === 'CHAT_UPDATE' && eventData.chat) {
+        const updatedChat = eventData.chat;
+        setChats((prev) => {
+          const exists = prev.some((chat) => chat.id === updatedChat.id);
+          if (!exists) return [updatedChat, ...prev];
 
-      // Update chat's last message if this was the last message
-      setChats(prev => {
-        const updatedChats = prev.map(chat => 
-          chat.id === updatedMessage.chatId
-            ? {
-                ...chat,
-                lastMessage: updatedMessage.content,
-                lastMessageTime: updatedMessage.createdAt,
-                updatedAt: updatedMessage.createdAt
-              }
-            : chat
-        );
-
-        const updatedChat = updatedChats.find(chat => chat.id === updatedMessage.chatId);
-        if (updatedChat) {
-          const filteredChats = updatedChats.filter(chat => chat.id !== updatedMessage.chatId);
-          return [updatedChat, ...filteredChats];
-        }
-
-        return updatedChats;
-      });
-    };
-
-    const handleMessageDelete = (messageId) => {
-      // Only remove message from messages state if it belongs to the current chat
-      if (currentChat) {
-        setMessages(prev => prev.filter(msg => msg.id !== messageId));
-      }
-
-      // Update chat's last message if this was the last message
-      setChats(prev => {
-        const updatedChats = prev.map(chat => {
-          if (chat.id === currentChat?.id) {
-            const remainingMessages = messages.filter(msg => msg.id !== messageId);
-            const lastMessage = remainingMessages[remainingMessages.length - 1];
-            return {
-              ...chat,
-              lastMessage: lastMessage?.content || null,
-              lastMessageTime: lastMessage?.createdAt || null,
-              updatedAt: lastMessage?.createdAt || chat.updatedAt
-            };
-          }
-          return chat;
+          const updatedChats = prev.map((chat) =>
+            chat.id === updatedChat.id ? { ...chat, ...updatedChat } : chat
+          );
+          const found = updatedChats.find((chat) => chat.id === updatedChat.id);
+          return [found, ...updatedChats.filter((chat) => chat.id !== updatedChat.id)];
         });
 
-        const updatedChat = updatedChats.find(chat => chat.id === currentChat?.id);
-        if (updatedChat) {
-          const filteredChats = updatedChats.filter(chat => chat.id !== currentChat?.id);
-          return [updatedChat, ...filteredChats];
+        if (currentChatRef.current?.id === updatedChat.id) {
+          setCurrentChat((prev) => ({ ...prev, ...updatedChat }));
         }
-
-        return updatedChats;
-      });
-    };
-
-    const handleNewChat = (chat) => {
-      console.log('Received new chat:', chat);
-      setChats(prev => [chat, ...prev]);
-    };
-
-    const handleChatUpdate = (updatedChat) => {
-      console.log('Received chat update:', updatedChat);
-      setChats(prev => {
-        const updatedChats = prev.map(chat => 
-          chat.id === updatedChat.id ? updatedChat : chat
-        );
-        const updatedChatFound = updatedChats.find(chat => chat.id === updatedChat.id);
-        if (updatedChatFound) {
-          const filteredChats = updatedChats.filter(chat => chat.id !== updatedChat.id);
-          return [updatedChatFound, ...filteredChats];
-        }
-        return updatedChats;
-      });
-      
-      if (currentChat?.id === updatedChat.id) {
-        setCurrentChat(updatedChat);
       }
     };
 
-    // Subscribe to WebSocket events
-    socket.on('message:new', handleNewMessage);
-    socket.on('message:update', handleMessageUpdate);
-    socket.on('message:delete', handleMessageDelete);
-    socket.on('chat:new', handleNewChat);
-    socket.on('chat:update', handleChatUpdate);
+    const subscriptions = [
+      subscribe(WS_URLS.SUBSCRIBE.USER_QUEUE(currentUser.id), (msg) => {
+        try {
+          handleNewMessage(JSON.parse(msg.body));
+        } catch (err) {
+          console.error('Error parsing user queue message:', err);
+        }
+      }),
+      subscribe(WS_URLS.SUBSCRIBE.CHAT_EVENTS(currentUser.id), (msg) => {
+        try {
+          handleChatEvent(JSON.parse(msg.body));
+        } catch (err) {
+          console.error('Error parsing chat event:', err);
+        }
+      }),
+    ];
+
+    chatsRef.current.forEach((chat) => {
+      const chatId = getChatId(chat);
+      if (!chatId || chat.isDraft) return;
+
+      const sub = subscribe(WS_URLS.SUBSCRIBE.CHAT_MESSAGES(chatId), (msg) => {
+        try {
+          handleNewMessage(JSON.parse(msg.body));
+        } catch (err) {
+          console.error('Error parsing chat topic message:', err);
+        }
+      });
+      subscriptions.push(sub);
+    });
 
     return () => {
-      // Unsubscribe from WebSocket events
-      socket.off('message:new', handleNewMessage);
-      socket.off('message:update', handleMessageUpdate);
-      socket.off('message:delete', handleMessageDelete);
-      socket.off('chat:new', handleNewChat);
-      socket.off('chat:update', handleChatUpdate);
+      subscriptions.forEach((sub) => sub?.unsubscribe());
     };
-  }, [socket, connected, currentChat, chats, messages]);
+  }, [connected, currentUser?.id, subscribe, showMessageNotification, chats]);
 
   // Add reaction handling functions
   const handleAddReaction = async (messageId, emoji) => {
@@ -328,26 +344,6 @@ export const ChatProvider = ({ children }) => {
       throw new Error('Failed to edit reaction');
     }
   };
-
-  // Add socket event listener for reaction updates
-  useEffect(() => {
-    if (!socket || !connected) return;
-
-    socket.on('message:reaction', (updatedMessage) => {
-      console.log('Received reaction update:', updatedMessage);
-      
-      // Only update message in messages state if it belongs to the current chat
-      if (currentChat && updatedMessage.chatId === currentChat.id) {
-        setMessages(prev => prev.map(msg => 
-          msg.id === updatedMessage.id ? updatedMessage : msg
-        ));
-      }
-    });
-
-    return () => {
-      socket.off('message:reaction');
-    };
-  }, [socket, connected, currentChat]);
 
   const selectChat = (chat) => {
     if (!chat) {

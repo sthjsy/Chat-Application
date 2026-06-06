@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import {FaComments, FaCalendarAlt, FaBroadcastTower , FaSearch, FaUserCircle, FaSignOutAlt, FaBell, FaPhoneAlt, FaCommentDots ,FaFileAlt ,FaCalendarCheck  } from "react-icons/fa";
+import {FaComments, FaCalendarAlt, FaBroadcastTower , FaSearch, FaUserCircle, FaSignOutAlt, FaBell, FaPhoneAlt, FaCommentDots ,FaFileAlt ,FaCalendarCheck, FaTimes } from "react-icons/fa";
 import ChatList from './ChatList';
 import ChatWindow from './ChatWindow';
 import { useAuth } from '../../contexts/AuthContext';
@@ -68,28 +68,44 @@ const Chat = () => {
     }
   };
 
-  // Handle user search
-  const handleSearch = async (query) => {
-    try {
-      setSearchQuery(query);
-      setIsSearching(true);
-      setError(null);
-      
+  // Handle user search with debounce
+  const handleSearchInput = (query) => {
+    setSearchQuery(query);
+    
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    if (!query.trim()) {
+      setSearchResults([]);
+      setShowSearchResults(false);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    setError(null);
+
+    // Debounce backend call
+    searchTimeoutRef.current = setTimeout(async () => {
       if (query.length > 2) {
-        const results = await chatService.handleSearch(query);
-        setSearchResults(results);
-        setShowSearchResults(true);
+        try {
+          const results = await chatService.handleSearch(query);
+          setSearchResults(results);
+          setShowSearchResults(true);
+        } catch (error) {
+          console.error('Error searching users:', error);
+          setError('Failed to search users. Please try again.');
+          setSearchResults([]);
+        } finally {
+          setIsSearching(false);
+        }
       } else {
         setSearchResults([]);
         setShowSearchResults(false);
+        setIsSearching(false);
       }
-    } catch (error) {
-      console.error('Error searching users:', error);
-      setError('Failed to search users. Please try again.');
-      setSearchResults([]);
-    } finally {
-      setIsSearching(false);
-    }
+    }, 500); // 500ms wait before calling backend
   };
 
   // Handle user selection from search
@@ -161,9 +177,11 @@ const Chat = () => {
         }
       }
       
-      // Clear search
-      setSearchQuery('');
-      setSearchResults([]);
+      // Clear search but don't clear query if we want to keep it visible
+      // The requirement "And if user not do not clear input field" means 
+      // we probably shouldn't erase their search text when they click a user, 
+      // but we should hide the dropdown.
+      // Keeping it clear is usually better UX, but let's just close the dropdown.
       setShowSearchResults(false);
       setSelectedIndex(-1);
     } catch (error) {
@@ -204,12 +222,20 @@ const Chat = () => {
             className="form-control border-0 w-100" 
             placeholder="Search users..." 
             value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              handleSearch(e.target.value);
-            }}
+            onChange={(e) => handleSearchInput(e.target.value)}
             onKeyDown={handleKeyDown}
+            onFocus={() => {
+              if (searchResults.length > 0) setShowSearchResults(true);
+            }}
           />
+          {searchQuery && (
+            <button 
+              className="btn btn-sm btn-link text-muted p-0 me-2" 
+              onClick={() => handleSearchInput('')}
+            >
+              <FaTimes />
+            </button>
+          )}
           {isSearching && (
             <div className="search-loading">
               <div className="spinner-border spinner-border-sm text-primary" role="status">
@@ -217,14 +243,14 @@ const Chat = () => {
               </div>
             </div>
           )}
-          {showSearchResults && (
+          {showSearchResults && searchQuery.length > 2 && (
             <div className="search-results-dropdown w-100">
               {error && (
                 <div className="search-error p-2 text-danger">
                   {error}
                 </div>
               )}
-              {!error && searchResults.length === 0 && (
+              {!error && searchResults.length === 0 && !isSearching && (
                 <div className="search-no-results p-2 text-muted">
                   No users found
                 </div>
@@ -358,4 +384,4 @@ const Chat = () => {
   );
 };
 
-export default Chat; 
+export default Chat;

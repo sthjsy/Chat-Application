@@ -1,246 +1,125 @@
-// VideoCall.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useAuth } from '../../contexts/AuthContext';
+import { useCall } from '../../contexts/CallContext';
 import VideoGrid from './VideoGrid';
 import CallControls from './CallControls';
-import { useSocket } from '../../contexts/SocketContext';
-import { useAuth } from '../../contexts/AuthContext';
-import MessageList from '../chat/MessageList';
-import MessageInput from '../chat/MessageInput';
-import { X } from 'lucide-react';
 
-const VideoCall = ({ call, onEndCall }) => {
-  const [participants, setParticipants] = useState([]);
-  const [isAudioEnabled, setIsAudioEnabled] = useState(true);
-  const [isVideoEnabled, setIsVideoEnabled] = useState(true);
-  const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const [pinnedParticipantId, setPinnedParticipantId] = useState(null);
-  const [showChat, setShowChat] = useState(false);
-  const [showParticipants, setShowParticipants] = useState(false);
-  const [messages, setMessages] = useState([]);
-  const { socket, connected } = useSocket();
+const VideoCall = () => {
+  const {
+    activeCall,
+    endCall,
+    toggleAudio,
+    toggleVideo,
+    localStream,
+    remoteStream,
+    isAudioMuted,
+    isVideoMuted,
+  } = useCall();
   const { currentUser } = useAuth();
+  const [duration, setDuration] = useState('00:00');
+  const [pinnedParticipantId, setPinnedParticipantId] = useState(null);
+
+  const remoteParticipant =
+    activeCall?.status === 'outgoing' ? activeCall.recipient : activeCall?.caller;
+
+  const remoteName =
+    remoteParticipant?.fullName ||
+    remoteParticipant?.username ||
+    remoteParticipant?.name ||
+    'Remote User';
+
+  const localName =
+    currentUser?.fullName || currentUser?.username || 'You';
+
+  const participants = useMemo(
+    () => [
+      {
+        id: currentUser?.id || 'local',
+        name: localName,
+        isLocal: true,
+        isAudioEnabled: !isAudioMuted,
+        isVideoEnabled: !isVideoMuted,
+        videoStream: localStream,
+      },
+      {
+        id: remoteParticipant?.id || 'remote',
+        name: remoteName,
+        isLocal: false,
+        isAudioEnabled: true,
+        isVideoEnabled: true,
+        videoStream: remoteStream,
+      },
+    ],
+    [
+      currentUser?.id,
+      localName,
+      remoteName,
+      remoteParticipant?.id,
+      isAudioMuted,
+      isVideoMuted,
+      localStream,
+      remoteStream,
+    ]
+  );
 
   useEffect(() => {
-    // Initialize with the current user
-    const initialParticipants = [
-      {
-        id: currentUser.id,
-        name: currentUser.name,
-        isLocal: true,
-        isAudioEnabled,
-        isVideoEnabled,
-        videoStream: null // In a real app, this would be a MediaStream object
-      }
-    ];
+    if (!activeCall?.startTime) return undefined;
 
-    // Add other participants from the call
-    if (call.participants) {
-      call.participants.forEach(participant => {
-        if (participant.id !== currentUser.id) {
-          initialParticipants.push({
-            id: participant.id,
-            name: participant.name,
-            isLocal: false,
-            isAudioEnabled: true,
-            isVideoEnabled: true,
-            videoStream: null // In a real app, this would be received from WebRTC
-          });
-        }
-      });
-    }
-
-    setParticipants(initialParticipants);
-
-    // Set up event listeners for WebRTC and socket events
-    if (socket) {
-      // Listen for new participants
-      socket.on('participant_joined', (participant) => {
-        setParticipants(prev => [
-          ...prev, 
-          { 
-            ...participant, 
-            isLocal: false, 
-            isAudioEnabled: true, 
-            isVideoEnabled: true, 
-            videoStream: null 
-          }
-        ]);
-      });
-
-      // Listen for participants leaving
-      socket.on('participant_left', (participantId) => {
-        setParticipants(prev => prev.filter(p => p.id !== participantId));
-        if (pinnedParticipantId === participantId) {
-          setPinnedParticipantId(null);
-        }
-      });
-
-      // Listen for audio/video state changes
-      socket.on('media_state_change', ({ participantId, audio, video }) => {
-        setParticipants(prev => 
-          prev.map(p => 
-            p.id === participantId 
-              ? { ...p, isAudioEnabled: audio, isVideoEnabled: video } 
-              : p
-          )
-        );
-      });
-
-      // Listen for call messages
-      socket.on('call_message', (message) => {
-        setMessages(prev => [...prev, message]);
-      });
-
-      return () => {
-        socket.off('participant_joined');
-        socket.off('participant_left');
-        socket.off('media_state_change');
-        socket.off('call_message');
-      };
-    }
-  }, [call, currentUser, socket, isAudioEnabled, isVideoEnabled, pinnedParticipantId]);
-
-  const handleToggleAudio = () => {
-    setIsAudioEnabled(prev => !prev);
-    // In a real app, this would also modify the MediaStream tracks
-    if (socket) {
-      socket.emit('media_state_change', {
-        callId: call.id,
-        participantId: currentUser.id,
-        audio: !isAudioEnabled,
-        video: isVideoEnabled
-      });
-    }
-  };
-
-  const handleToggleVideo = () => {
-    setIsVideoEnabled(prev => !prev);
-    // In a real app, this would also modify the MediaStream tracks
-    if (socket) {
-      socket.emit('media_state_change', {
-        callId: call.id,
-        participantId: currentUser.id,
-        audio: isAudioEnabled,
-        video: !isVideoEnabled
-      });
-    }
-  };
-
-  const handleToggleScreenShare = () => {
-    setIsScreenSharing(prev => !prev);
-    // In a real app, this would handle screen sharing via WebRTC
-  };
-
-  const handleEndCall = () => {
-    // In a real app, close all WebRTC connections
-    if (socket) {
-      socket.emit('leave_call', {
-        callId: call.id,
-        participantId: currentUser.id
-      });
-    }
-    onEndCall();
-  };
-
-  const sendMessage = (content) => {
-    const newMessage = {
-      id: Date.now().toString(),
-      sender: currentUser,
-      content,
-      timestamp: new Date().toISOString()
+    const tick = () => {
+      const elapsedMs = Date.now() - new Date(activeCall.startTime).getTime();
+      const seconds = Math.floor((elapsedMs / 1000) % 60);
+      const minutes = Math.floor((elapsedMs / (1000 * 60)) % 60);
+      const hours = Math.floor(elapsedMs / (1000 * 60 * 60));
+      setDuration(
+        `${hours > 0 ? `${hours}:` : ''}${minutes.toString().padStart(2, '0')}:${seconds
+          .toString()
+          .padStart(2, '0')}`
+      );
     };
-    
-    setMessages(prev => [...prev, newMessage]);
-    
-    if (socket) {
-      socket.emit('send_call_message', {
-        callId: call.id,
-        message: newMessage
-      });
-    }
-  };
+
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [activeCall?.startTime]);
+
+  if (!activeCall) {
+    return (
+      <div className="flex h-full bg-gray-900 items-center justify-center">
+        <p className="text-white">Call not found or has ended.</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex h-full bg-gray-900">
-      <div className="flex-grow flex flex-col">
-        <div className="flex-grow p-4">
-          <VideoGrid 
-            participants={participants} 
-            pinnedParticipantId={pinnedParticipantId}
-            onPinParticipant={setPinnedParticipantId}
-          />
-        </div>
-        <div className="p-4 flex justify-center">
-          <CallControls 
-            onEnd={handleEndCall}
-            onToggleAudio={handleToggleAudio}
-            onToggleVideo={handleToggleVideo}
-            onToggleChat={() => setShowChat(prev => !prev)}
-            onToggleParticipants={() => setShowParticipants(prev => !prev)}
-            onToggleScreenShare={handleToggleScreenShare}
-            isAudioEnabled={isAudioEnabled}
-            isVideoEnabled={isVideoEnabled}
-            isInCall={true}
-          />
-        </div>
+    <div className="flex h-full flex-col bg-gray-900">
+      <div className="p-2 text-center text-white text-sm bg-gray-800">
+        {remoteName} — {duration}
+        {activeCall.status !== 'connected' && (
+          <span className="ml-2 text-yellow-400 capitalize">({activeCall.status})</span>
+        )}
       </div>
-
-      {showChat && (
-        <div className="w-80 bg-white border-l border-gray-200 flex flex-col">
-          <div className="p-4 border-b border-gray-200 flex justify-between items-center">
-            <h3 className="font-semibold">Call Chat</h3>
-            <button 
-              onClick={() => setShowChat(false)}
-              className="p-1 rounded-full hover:bg-gray-100"
-            >
-              <X size={16} />
-            </button>
-          </div>
-          <MessageList 
-            messages={messages} 
-            currentUserId={currentUser.id} 
-            loading={false} 
-          />
-          <div className="p-4 border-t border-gray-200">
-            <MessageInput onSendMessage={sendMessage} onTyping={() => {}} />
-          </div>
-        </div>
-      )}
-
-      {showParticipants && (
-        <div className="w-80 bg-white border-l border-gray-200 flex flex-col">
-          <div className="p-4 border-b border-gray-200 flex justify-between items-center">
-            <h3 className="font-semibold">Participants ({participants.length})</h3>
-            <button 
-              onClick={() => setShowParticipants(false)}
-              className="p-1 rounded-full hover:bg-gray-100"
-            >
-              <X size={16} />
-            </button>
-          </div>
-          <div className="overflow-y-auto flex-grow">
-            {participants.map((participant) => (
-              <div 
-                key={participant.id} 
-                className="p-4 border-b border-gray-200 flex items-center justify-between"
-              >
-                <div className="flex items-center">
-                  <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center mr-3">
-                    <span className="text-sm font-semibold text-white">
-                      {participant.name.charAt(0).toUpperCase()}
-                    </span>
-                  </div>
-                  <span>{participant.name} {participant.isLocal ? '(You)' : ''}</span>
-                </div>
-                <div className="flex space-x-1">
-                  {!participant.isAudioEnabled && <MicOff size={16} className="text-red-500" />}
-                  {!participant.isVideoEnabled && <VideoOff size={16} className="text-red-500" />}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <div className="flex-grow p-2 min-h-0">
+        <VideoGrid
+          participants={participants}
+          pinnedParticipantId={pinnedParticipantId}
+          onPinParticipant={setPinnedParticipantId}
+        />
+      </div>
+      <div className="p-3 flex justify-center">
+        <CallControls
+          onEnd={endCall}
+          onToggleAudio={toggleAudio}
+          onToggleVideo={toggleVideo}
+          onToggleChat={() => {}}
+          onToggleParticipants={() => {}}
+          onToggleScreenShare={() => {}}
+          isAudioEnabled={!isAudioMuted}
+          isVideoEnabled={!isVideoMuted}
+          isInCall
+          showChat={false}
+          showParticipants={false}
+        />
+      </div>
     </div>
   );
 };
