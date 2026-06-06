@@ -45,7 +45,49 @@ export const CallProvider = ({ children }) => {
   const peerConnectionRef = useRef(null);
   const iceCandidateQueueRef = useRef([]);
   const localStreamRef = useRef(null);
+  const remoteStreamRef = useRef(null);
   const subscriptionsRef = useRef([]);
+  const offerProcessingRef = useRef(false);
+
+  const resolveCallType = useCallback((callOrType) => {
+    if (!callOrType) return 'audio';
+    if (typeof callOrType === 'string') return callOrType.toLowerCase();
+    return (callOrType.type || callOrType.callType || 'audio').toLowerCase();
+  }, []);
+
+  const sessionIdsMatch = (a, b) => String(a) === String(b);
+
+  const getCallMediaStream = useCallback(async (callType) => {
+    const wantsVideo = isVideoCallType(callType);
+
+    if (!wantsVideo) {
+      return navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    }
+
+    const videoConstraints = [
+      { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+      { facingMode: 'user' },
+      true,
+    ];
+
+    for (const videoConstraint of videoConstraints) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: videoConstraint,
+        });
+        if (stream.getVideoTracks().length > 0) {
+          console.info(`${LOG_PREFIX} Acquired camera stream with ${stream.getVideoTracks().length} video track(s)`);
+          return stream;
+        }
+      } catch (error) {
+        console.warn(`${LOG_PREFIX} Video constraint failed:`, videoConstraint, error);
+      }
+    }
+
+    console.warn(`${LOG_PREFIX} Camera unavailable, continuing with audio only`);
+    return navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+  }, []);
 
   useEffect(() => {
     activeCallRef.current = activeCall;
@@ -66,25 +108,12 @@ export const CallProvider = ({ children }) => {
   const isVideoCallType = (type) => (type || 'audio').toLowerCase().includes('video');
 
   const requestMediaPermissions = async (type = 'audio') => {
-    const isVideo = isVideoCallType(type);
-
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isVideo });
+      const stream = await getCallMediaStream(resolveCallType(type));
       stream.getTracks().forEach((track) => track.stop());
       setMediaPermission(true);
       return true;
     } catch (error) {
-      if (isVideo) {
-        try {
-          const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-          audioStream.getTracks().forEach((track) => track.stop());
-          setMediaPermission(true);
-          return true;
-        } catch {
-          setMediaPermission(false);
-          return false;
-        }
-      }
       console.error(`${LOG_PREFIX} Media permission denied:`, error);
       setMediaPermission(false);
       return false;
@@ -101,8 +130,42 @@ export const CallProvider = ({ children }) => {
     peerConnectionRef.current?.close();
     peerConnectionRef.current = null;
     iceCandidateQueueRef.current = [];
+    remoteStreamRef.current = null;
     setRemoteStream(null);
     incomingOfferRef.current = null;
+  }, []);
+
+  const updateRemoteStream = useCallback((track, eventStreams) => {
+    if (!track) return;
+
+    let stream = remoteStreamRef.current || new MediaStream();
+
+    const mergeTrack = (incomingTrack) => {
+      stream.getTracks()
+        .filter((existing) => existing.kind === incomingTrack.kind)
+        .forEach((existing) => stream.removeTrack(existing));
+      if (!stream.getTracks().some((existing) => existing.id === incomingTrack.id)) {
+        stream.addTrack(incomingTrack);
+      }
+    };
+
+    if (eventStreams?.[0]) {
+      eventStreams[0].getTracks().forEach(mergeTrack);
+    } else {
+      mergeTrack(track);
+    }
+
+    track.onunmute = () => {
+      remoteStreamRef.current = stream;
+      setRemoteStream(new MediaStream(stream.getTracks()));
+    };
+
+    remoteStreamRef.current = stream;
+    setRemoteStream(new MediaStream(stream.getTracks()));
+    console.info(
+      `${LOG_PREFIX} Remote stream updated:`,
+      stream.getTracks().map((t) => `${t.kind}:${t.readyState}:${t.muted}`)
+    );
   }, []);
 
   const cleanupCall = useCallback((clearActive = true) => {
@@ -155,9 +218,39 @@ export const CallProvider = ({ children }) => {
     cleanupCall();
   }, [cleanupCall]);
 
+  const attachPeerConnectionHandlers = useCallback((peerConnection, { sessionId, target }) => {
+    peerConnection.ontrack = (event) => {
+      console.info(`${LOG_PREFIX} ontrack: ${event.track.kind}, streams: ${event.streams?.length ?? 0}`);
+      updateRemoteStream(event.track, event.streams);
+    };
+
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate) {
+        publish('/app/ice-candidate', {
+          target,
+          sessionId,
+          payload: event.candidate,
+        });
+      }
+    };
+
+    peerConnection.onconnectionstatechange = () => {
+      const state = peerConnection.connectionState;
+      const call = activeCallRef.current;
+
+      if (state === 'connected') {
+        setActiveCall((prev) => (prev ? { ...prev, status: 'connected' } : prev));
+      }
+
+      if (state === 'failed' && call?.status === 'connected') {
+        cleanupCall();
+      }
+    };
+  }, [cleanupCall, publish, updateRemoteStream]);
+
   const setupPeerConnection = useCallback(async ({ sessionId, target, callType }, isInitiator) => {
     try {
-      console.info(`${LOG_PREFIX} Setting up PeerConnection. isInitiator: ${isInitiator}`);
+      console.info(`${LOG_PREFIX} Setting up PeerConnection. isInitiator: ${isInitiator}, type: ${callType}`);
 
       stopLocalMedia();
       resetPeerConnection();
@@ -165,47 +258,19 @@ export const CallProvider = ({ children }) => {
       const peerConnection = new RTCPeerConnection(ICE_SERVERS);
       peerConnectionRef.current = peerConnection;
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: isVideoCallType(callType),
-      });
+      const stream = await getCallMediaStream(callType);
       localStreamRef.current = stream;
       setLocalStream(stream);
       setIsAudioMuted(false);
-      setIsVideoMuted(false);
+      setIsVideoMuted(!stream.getVideoTracks().length);
       stream.getTracks().forEach((track) => peerConnection.addTrack(track, stream));
 
-      peerConnection.ontrack = (event) => {
-        const [remote] = event.streams;
-        if (remote) {
-          setRemoteStream(remote);
-        }
-      };
+      const wantsVideo = isVideoCallType(callType);
+      if (wantsVideo && stream.getVideoTracks().length === 0) {
+        peerConnection.addTransceiver('video', { direction: 'recvonly' });
+      }
 
-      peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-          publish('/app/ice-candidate', {
-            target,
-            sessionId,
-            payload: event.candidate,
-          });
-        }
-      };
-
-      peerConnection.onconnectionstatechange = () => {
-        const state = peerConnection.connectionState;
-        const call = activeCallRef.current;
-
-        if (state === 'connected') {
-          setActiveCall((prev) => (prev ? { ...prev, status: 'connected' } : prev));
-        }
-
-        // Only auto-end after a call was actually connected.
-        // "failed" fires while ringing with no peer — don't dismiss the call UI.
-        if (state === 'failed' && call?.status === 'connected') {
-          cleanupCall();
-        }
-      };
+      attachPeerConnectionHandlers(peerConnection, { sessionId, target });
 
       if (isInitiator) {
         const offer = await peerConnection.createOffer();
@@ -219,13 +284,33 @@ export const CallProvider = ({ children }) => {
       cleanupCall();
       return null;
     }
-  }, [cleanupCall, publish, resetPeerConnection, stopLocalMedia]);
+  }, [
+    attachPeerConnectionHandlers,
+    cleanupCall,
+    getCallMediaStream,
+    publish,
+    resetPeerConnection,
+    stopLocalMedia,
+  ]);
 
   const processOffer = useCallback(async (offerData) => {
+    if (offerProcessingRef.current) {
+      console.debug(`${LOG_PREFIX} Offer processing already in progress, skipping duplicate`);
+      return;
+    }
+
+    const pcExisting = peerConnectionRef.current;
+    if (pcExisting?.remoteDescription) {
+      console.debug(`${LOG_PREFIX} Remote description already set, skipping duplicate offer`);
+      return;
+    }
+
+    offerProcessingRef.current = true;
+
     try {
       const call = activeCallRef.current;
       const target = getRemoteUsername(call) || offerData.caller;
-      const callType = call?.type || incomingCallRef.current?.type || 'audio';
+      const callType = resolveCallType(call) || resolveCallType(offerData.callType) || 'audio';
 
       if (!peerConnectionRef.current) {
         await setupPeerConnection(
@@ -236,6 +321,10 @@ export const CallProvider = ({ children }) => {
 
       const pc = peerConnectionRef.current;
       if (!pc) return;
+
+      if (pc.signalingState !== 'stable' && pc.signalingState !== 'have-local-offer') {
+        console.warn(`${LOG_PREFIX} Unexpected signaling state before offer: ${pc.signalingState}`);
+      }
 
       await pc.setRemoteDescription(new RTCSessionDescription(offerData.payload));
       await flushIceCandidateQueue();
@@ -248,18 +337,31 @@ export const CallProvider = ({ children }) => {
         sessionId: offerData.sessionId,
         payload: answer,
       });
+
+      console.info(`${LOG_PREFIX} Answer sent for session:`, offerData.sessionId);
     } catch (error) {
       console.error(`${LOG_PREFIX} Error processing offer:`, error);
       cleanupCall();
+    } finally {
+      offerProcessingRef.current = false;
     }
-  }, [cleanupCall, flushIceCandidateQueue, getRemoteUsername, publish, setupPeerConnection]);
+  }, [
+    cleanupCall,
+    flushIceCandidateQueue,
+    getRemoteUsername,
+    publish,
+    resolveCallType,
+    setupPeerConnection,
+  ]);
 
   const handleOffer = useCallback(async (data) => {
     console.info(`${LOG_PREFIX} [RECV] offer:`, data);
     const call = activeCallRef.current;
 
     if (call && ['connecting', 'outgoing', 'connected'].includes(call.status)) {
-      await processOffer(data);
+      if (sessionIdsMatch(call.callId, data.sessionId)) {
+        await processOffer(data);
+      }
     } else {
       incomingOfferRef.current = data;
     }
@@ -414,7 +516,7 @@ export const CallProvider = ({ children }) => {
     const call = incomingCallRef.current;
     if (!call) return;
 
-    const { callId, caller, type } = call;
+    const { callId, caller } = call;
 
     if (!accept) {
       publish('/app/hangup', {
@@ -428,40 +530,57 @@ export const CallProvider = ({ children }) => {
       return;
     }
 
-    const permission = mediaPermission || (await requestMediaPermissions(type));
-    if (!permission) {
-      alert('Microphone/camera permissions are required.');
-      setIncomingCall(null);
+    const callType = resolveCallType(call);
+
+    try {
+      const permission = mediaPermission || (await requestMediaPermissions(callType));
+      if (!permission) {
+        alert('Microphone/camera permissions are required.');
+        setIncomingCall(null);
+        incomingCallRef.current = null;
+        return;
+      }
+
+      const activeCallData = {
+        ...call,
+        type: callType,
+        status: 'connecting',
+        recipient: caller,
+        startTime: new Date(),
+      };
+
+      flushSync(() => {
+        setActiveCall(activeCallData);
+        setIncomingCall(null);
+        setIsCallMinimized(false);
+      });
+      activeCallRef.current = activeCallData;
       incomingCallRef.current = null;
-      return;
-    }
 
-    const activeCallData = {
-      ...call,
-      status: 'connecting',
-      recipient: caller,
-      startTime: new Date(),
-    };
+      api.post(`/calls/${callId}/accept`).catch(() => {});
 
-    flushSync(() => {
-      setActiveCall(activeCallData);
-      setIncomingCall(null);
-      setIsCallMinimized(false);
-    });
-    activeCallRef.current = activeCallData;
-    incomingCallRef.current = null;
+      const storedOffer = incomingOfferRef.current;
 
-    api.post(`/calls/${callId}/accept`).catch(() => {});
+      if (storedOffer && sessionIdsMatch(storedOffer.sessionId, callId)) {
+        incomingOfferRef.current = null;
+        await processOffer(storedOffer);
+        return;
+      }
 
-    const storedOffer = incomingOfferRef.current;
-    if (storedOffer && storedOffer.sessionId === callId) {
-      await processOffer(storedOffer);
-      incomingOfferRef.current = null;
-    } else {
       await setupPeerConnection(
-        { sessionId: callId, target: caller.username, callType: type },
+        { sessionId: callId, target: caller.username, callType },
         false
       );
+
+      const delayedOffer = incomingOfferRef.current;
+      if (delayedOffer && sessionIdsMatch(delayedOffer.sessionId, callId)) {
+        incomingOfferRef.current = null;
+        await processOffer(delayedOffer);
+      }
+    } catch (error) {
+      console.error(`${LOG_PREFIX} Failed to answer call:`, error);
+      alert('Failed to join the call. Please check camera/microphone permissions.');
+      cleanupCall();
     }
   };
 

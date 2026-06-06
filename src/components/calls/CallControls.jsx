@@ -12,6 +12,7 @@ import {
   Volume1,
   VolumeX,
 } from 'lucide-react';
+import './CallControls.css';
 
 const CallControls = ({
   onEnd,
@@ -27,6 +28,7 @@ const CallControls = ({
   showScreenShare = true,
   showChat = true,
   showParticipants = true,
+  showDisconnectLabel = true,
 }) => {
   const [volume, setVolume] = useState(50);
   const [showVolumeSlider, setShowVolumeSlider] = useState(false);
@@ -40,24 +42,24 @@ const CallControls = ({
   if (!isInCall) return null;
 
   return (
-    <div className="bg-gray-800 p-3 rounded-lg flex items-center justify-center flex-wrap gap-2">
+    <div className="call-controls-bar">
       <button
         type="button"
         onClick={onToggleAudio}
-        className={`p-3 rounded-full ${isAudioEnabled ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-500 hover:bg-red-600'}`}
+        className={`call-control-btn ${!isAudioEnabled ? 'active-off' : ''}`}
         title={isAudioEnabled ? 'Mute microphone' : 'Unmute microphone'}
       >
-        {isAudioEnabled ? <Mic size={20} className="text-white" /> : <MicOff size={20} className="text-white" />}
+        {isAudioEnabled ? <Mic size={20} /> : <MicOff size={20} />}
       </button>
 
       {showVideo && (
         <button
           type="button"
           onClick={onToggleVideo}
-          className={`p-3 rounded-full ${isVideoEnabled ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-500 hover:bg-red-600'}`}
+          className={`call-control-btn ${!isVideoEnabled ? 'active-off' : ''}`}
           title={isVideoEnabled ? 'Turn off camera' : 'Turn on camera'}
         >
-          {isVideoEnabled ? <Video size={20} className="text-white" /> : <VideoOff size={20} className="text-white" />}
+          {isVideoEnabled ? <Video size={20} /> : <VideoOff size={20} />}
         </button>
       )}
 
@@ -65,45 +67,39 @@ const CallControls = ({
         <button
           type="button"
           onClick={onToggleScreenShare}
-          className="p-3 rounded-full bg-gray-700 hover:bg-gray-600"
+          className="call-control-btn"
           title="Share screen"
         >
-          <MonitorUp size={20} className="text-white" />
+          <MonitorUp size={20} />
         </button>
       )}
 
-      <div className="relative">
+      <div className="call-controls-volume-wrap">
         <button
           type="button"
           onClick={() => setShowVolumeSlider(!showVolumeSlider)}
-          className="p-3 rounded-full bg-gray-700 hover:bg-gray-600"
+          className="call-control-btn"
           title="Adjust volume"
         >
           {getVolumeIcon()}
         </button>
 
         {showVolumeSlider && (
-          <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2 bg-gray-700 p-3 rounded-lg shadow-lg">
+          <div className="call-controls-volume-slider">
             <input
               type="range"
               min="0"
               max="100"
               value={volume}
               onChange={(e) => setVolume(parseInt(e.target.value, 10))}
-              className="w-32"
             />
           </div>
         )}
       </div>
 
       {showChat && (
-        <button
-          type="button"
-          onClick={onToggleChat}
-          className="p-3 rounded-full bg-gray-700 hover:bg-gray-600"
-          title="Open chat"
-        >
-          <MessageSquare size={20} className="text-white" />
+        <button type="button" onClick={onToggleChat} className="call-control-btn" title="Open chat">
+          <MessageSquare size={20} />
         </button>
       )}
 
@@ -111,20 +107,21 @@ const CallControls = ({
         <button
           type="button"
           onClick={onToggleParticipants}
-          className="p-3 rounded-full bg-gray-700 hover:bg-gray-600"
+          className="call-control-btn"
           title="Show participants"
         >
-          <Users size={20} className="text-white" />
+          <Users size={20} />
         </button>
       )}
 
       <button
         type="button"
         onClick={onEnd}
-        className="p-3 rounded-full bg-red-500 hover:bg-red-600"
-        title="End call"
+        className="call-control-btn disconnect-btn"
+        title="Disconnect call"
       >
-        <PhoneOff size={20} className="text-white" />
+        <PhoneOff size={18} />
+        {showDisconnectLabel && <span>Disconnect</span>}
       </button>
     </div>
   );

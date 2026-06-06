@@ -1,12 +1,12 @@
 import React, { useEffect, useRef } from 'react';
 import Draggable from 'react-draggable';
-import { Minimize2, Maximize2 } from 'lucide-react';
+import { Minimize2, Maximize2, PhoneOff } from 'lucide-react';
 import { useCall } from '../../contexts/CallContext';
 import AudioCall from './AudioCall';
 import VideoCall from './VideoCall';
 
 const CallWindow = () => {
-  const { activeCall, isCallMinimized, setIsCallMinimized } = useCall();
+  const { activeCall, isCallMinimized, setIsCallMinimized, endCall } = useCall();
   const nodeRef = useRef(null);
 
   useEffect(() => {
@@ -52,13 +52,35 @@ const CallWindow = () => {
             justifyContent: 'space-between',
             alignItems: 'center',
             borderBottom: '1px solid #111',
+            gap: '8px',
           }}
         >
-          <span style={{ fontWeight: 'bold' }}>
+          <span style={{ fontWeight: 'bold', flex: 1 }}>
             {isVideo ? 'Video Call' : 'Audio Call'}
             {activeCall.status === 'outgoing' && ' — Ringing…'}
             {activeCall.status === 'connecting' && ' — Connecting…'}
           </span>
+          <button
+            type="button"
+            onClick={endCall}
+            title="Disconnect call"
+            style={{
+              background: '#ed4245',
+              border: 'none',
+              color: 'white',
+              cursor: 'pointer',
+              borderRadius: '6px',
+              padding: '6px 10px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontSize: '12px',
+              fontWeight: 600,
+            }}
+          >
+            <PhoneOff size={14} />
+            Disconnect
+          </button>
           <button
             type="button"
             onClick={() => setIsCallMinimized((prev) => !prev)}
@@ -70,7 +92,11 @@ const CallWindow = () => {
         {!isCallMinimized && (
           <div
             className="call-window-body"
-            style={{ height: isVideo ? '500px' : '420px', width: isVideo ? '640px' : '400px', position: 'relative' }}
+            style={{
+              height: isVideo ? '500px' : '420px',
+              width: isVideo ? '640px' : '400px',
+              position: 'relative',
+            }}
           >
             {isVideo ? <VideoCall /> : <AudioCall />}
           </div>

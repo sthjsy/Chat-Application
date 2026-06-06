@@ -1,15 +1,27 @@
 import React, { useEffect, useRef } from 'react';
 import { Mic, MicOff, Pin, PinOff } from 'lucide-react';
+import './VideoGrid.css';
 
-const StreamVideo = ({ stream, muted, className }) => {
+const hasLiveVideoTrack = (stream) =>
+  stream?.getVideoTracks?.().some((track) => track.readyState === 'live') ?? false;
+
+const StreamVideo = ({ stream, muted }) => {
   const videoRef = useRef(null);
 
   useEffect(() => {
     const el = videoRef.current;
-    if (!el) return;
+    if (!el) return undefined;
+
     el.srcObject = stream || null;
+
+    if (stream) {
+      el.play().catch((err) => {
+        console.warn('[VideoGrid] autoplay failed:', err);
+      });
+    }
+
     return () => {
-      if (el) el.srcObject = null;
+      el.srcObject = null;
     };
   }, [stream]);
 
@@ -19,7 +31,7 @@ const StreamVideo = ({ stream, muted, className }) => {
       autoPlay
       playsInline
       muted={muted}
-      className={className}
+      className="video-participant-stream"
     />
   );
 };
@@ -28,71 +40,63 @@ const VideoGrid = ({ participants, pinnedParticipantId, onPinParticipant }) => {
   const pinnedParticipant = participants.find((p) => p.id === pinnedParticipantId);
   const otherParticipants = participants.filter((p) => p.id !== pinnedParticipantId);
 
-  const getGridClassName = (count) => {
-    if (count <= 1) return 'grid-cols-1';
-    if (count === 2) return 'grid-cols-2';
-    if (count <= 4) return 'grid-cols-2';
-    if (count <= 9) return 'grid-cols-3';
-    return 'grid-cols-4';
+  const renderParticipantVideo = (participant, isPinned = false) => {
+    const showVideo = hasLiveVideoTrack(participant.videoStream);
+
+    return (
+      <div
+        key={participant.id}
+        className={`video-participant ${isPinned ? 'pinned' : ''}`}
+      >
+        <div className="video-participant-frame">
+          {showVideo ? (
+            <StreamVideo stream={participant.videoStream} muted={participant.isLocal} />
+          ) : (
+            <div className="video-participant-placeholder">
+              <div className="video-participant-avatar">
+                {(participant.name || '?').charAt(0).toUpperCase()}
+              </div>
+            </div>
+          )}
+
+          <div className="video-participant-overlay">
+            <div className="video-participant-label">
+              <span>
+                {participant.name} {participant.isLocal ? '(You)' : ''}
+              </span>
+              {participant.isAudioEnabled ? <Mic size={14} /> : <MicOff size={14} />}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => onPinParticipant(isPinned ? null : participant.id)}
+              className="video-participant-pin-btn"
+              title={isPinned ? 'Unpin' : 'Pin'}
+            >
+              {isPinned ? <PinOff size={14} /> : <Pin size={14} />}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   };
 
-  const renderParticipantVideo = (participant, isPinned = false) => (
-    <div key={participant.id} className={`relative ${isPinned ? 'col-span-full' : ''}`}>
-      <div className="aspect-video bg-gray-900 rounded-lg overflow-hidden">
-        {participant.videoStream ? (
-          <StreamVideo
-            stream={participant.videoStream}
-            muted={participant.isLocal}
-            className="w-full h-full object-cover"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <div className="w-20 h-20 rounded-full bg-blue-500 flex items-center justify-center">
-              <span className="text-2xl font-semibold text-white">
-                {(participant.name || '?').charAt(0).toUpperCase()}
-              </span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
-        <div className="bg-black bg-opacity-60 rounded-lg px-2 py-1 text-white flex items-center space-x-2">
-          <span>
-            {participant.name} {participant.isLocal ? '(You)' : ''}
-          </span>
-          {participant.isAudioEnabled ? (
-            <Mic size={16} className="text-white" />
-          ) : (
-            <MicOff size={16} className="text-white" />
-          )}
+  if (pinnedParticipant) {
+    return (
+      <div className="video-grid video-grid-split">
+        <div className="video-grid-main">
+          {renderParticipantVideo(pinnedParticipant, true)}
         </div>
-
-        <button
-          type="button"
-          onClick={() => onPinParticipant(isPinned ? null : participant.id)}
-          className="bg-black bg-opacity-60 rounded-lg p-1 text-white"
-        >
-          {isPinned ? <PinOff size={16} /> : <Pin size={16} />}
-        </button>
+        <div className={`video-grid-thumbs count-${Math.min(otherParticipants.length, 4) || 1}`}>
+          {otherParticipants.map((participant) => renderParticipantVideo(participant))}
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
 
   return (
-    <div className="h-full">
-      {pinnedParticipant ? (
-        <div className="h-full grid grid-rows-4 gap-2">
-          <div className="row-span-3">{renderParticipantVideo(pinnedParticipant, true)}</div>
-          <div className={`grid ${getGridClassName(otherParticipants.length)} gap-2`}>
-            {otherParticipants.map((participant) => renderParticipantVideo(participant))}
-          </div>
-        </div>
-      ) : (
-        <div className={`h-full grid ${getGridClassName(participants.length)} gap-2`}>
-          {participants.map((participant) => renderParticipantVideo(participant))}
-        </div>
-      )}
+    <div className={`video-grid video-grid-equal count-${Math.min(participants.length, 4) || 1}`}>
+      {participants.map((participant) => renderParticipantVideo(participant))}
     </div>
   );
 };

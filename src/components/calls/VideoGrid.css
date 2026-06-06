@@ -1,0 +1,146 @@
+.video-grid {
+  height: 100%;
+  width: 100%;
+}
+
+.video-grid-split {
+  display: grid;
+  grid-template-rows: 3fr 1fr;
+  gap: 8px;
+  height: 100%;
+}
+
+.video-grid-main {
+  min-height: 0;
+}
+
+.video-grid-thumbs {
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+}
+
+.video-grid-thumbs.count-1 {
+  grid-template-columns: 1fr;
+}
+
+.video-grid-thumbs.count-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.video-grid-thumbs.count-3,
+.video-grid-thumbs.count-4 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.video-grid-equal {
+  display: grid;
+  gap: 8px;
+  height: 100%;
+}
+
+.video-grid-equal.count-1 {
+  grid-template-columns: 1fr;
+}
+
+.video-grid-equal.count-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.video-grid-equal.count-3,
+.video-grid-equal.count-4 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.video-participant {
+  position: relative;
+  min-height: 0;
+  height: 100%;
+}
+
+.video-participant.pinned {
+  grid-column: 1 / -1;
+}
+
+.video-participant-frame {
+  width: 100%;
+  height: 100%;
+  min-height: 140px;
+  background-color: #1a1a1a;
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+}
+
+.video-participant-stream {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  background-color: #000;
+}
+
+.video-participant-placeholder {
+  width: 100%;
+  height: 100%;
+  min-height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #1a1a1a;
+}
+
+.video-participant-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background-color: #5865f2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 28px;
+  font-weight: 600;
+}
+
+.video-participant-overlay {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.video-participant-label {
+  background: rgba(0, 0, 0, 0.65);
+  border-radius: 6px;
+  padding: 4px 8px;
+  color: #fff;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 40px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.video-participant-pin-btn {
+  background: rgba(0, 0, 0, 0.65);
+  border: none;
+  border-radius: 6px;
+  padding: 4px;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.video-participant-pin-btn:hover {
+  background: rgba(0, 0, 0, 0.85);
+}

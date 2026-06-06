@@ -3,6 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useCall } from '../../contexts/CallContext';
 import VideoGrid from './VideoGrid';
 import CallControls from './CallControls';
+import './VideoGrid.css';
 
 const VideoCall = () => {
   const {
@@ -28,8 +29,10 @@ const VideoCall = () => {
     remoteParticipant?.name ||
     'Remote User';
 
-  const localName =
-    currentUser?.fullName || currentUser?.username || 'You';
+  const localName = currentUser?.fullName || currentUser?.username || 'You';
+
+  const localHasVideo = localStream?.getVideoTracks?.().length > 0;
+  const remoteHasVideo = remoteStream?.getVideoTracks?.().length > 0;
 
   const participants = useMemo(
     () => [
@@ -38,7 +41,7 @@ const VideoCall = () => {
         name: localName,
         isLocal: true,
         isAudioEnabled: !isAudioMuted,
-        isVideoEnabled: !isVideoMuted,
+        isVideoEnabled: localHasVideo && !isVideoMuted,
         videoStream: localStream,
       },
       {
@@ -46,7 +49,7 @@ const VideoCall = () => {
         name: remoteName,
         isLocal: false,
         isAudioEnabled: true,
-        isVideoEnabled: true,
+        isVideoEnabled: remoteHasVideo,
         videoStream: remoteStream,
       },
     ],
@@ -59,6 +62,8 @@ const VideoCall = () => {
       isVideoMuted,
       localStream,
       remoteStream,
+      localHasVideo,
+      remoteHasVideo,
     ]
   );
 
@@ -84,28 +89,32 @@ const VideoCall = () => {
 
   if (!activeCall) {
     return (
-      <div className="flex h-full bg-gray-900 items-center justify-center">
-        <p className="text-white">Call not found or has ended.</p>
+      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#111' }}>
+        <p style={{ color: '#fff' }}>Call not found or has ended.</p>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full flex-col bg-gray-900">
-      <div className="p-2 text-center text-white text-sm bg-gray-800">
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#111' }}>
+      <div style={{ padding: '8px', textAlign: 'center', color: '#fff', fontSize: '13px', background: '#1e1f22' }}>
         {remoteName} — {duration}
         {activeCall.status !== 'connected' && (
-          <span className="ml-2 text-yellow-400 capitalize">({activeCall.status})</span>
+          <span style={{ marginLeft: '8px', color: '#f0b232', textTransform: 'capitalize' }}>
+            ({activeCall.status})
+          </span>
         )}
       </div>
-      <div className="flex-grow p-2 min-h-0">
+
+      <div style={{ flex: 1, minHeight: 0, padding: '8px' }}>
         <VideoGrid
           participants={participants}
           pinnedParticipantId={pinnedParticipantId}
           onPinParticipant={setPinnedParticipantId}
         />
       </div>
-      <div className="p-3 flex justify-center">
+
+      <div style={{ padding: '12px', display: 'flex', justifyContent: 'center' }}>
         <CallControls
           onEnd={endCall}
           onToggleAudio={toggleAudio}
@@ -114,7 +123,7 @@ const VideoCall = () => {
           onToggleParticipants={() => {}}
           onToggleScreenShare={() => {}}
           isAudioEnabled={!isAudioMuted}
-          isVideoEnabled={!isVideoMuted}
+          isVideoEnabled={localHasVideo && !isVideoMuted}
           isInCall
           showChat={false}
           showParticipants={false}
