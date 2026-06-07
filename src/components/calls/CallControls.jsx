@@ -6,6 +6,7 @@ import {
   VideoOff,
   PhoneOff,
   MonitorUp,
+  MonitorOff,
   MessageSquare,
   Users,
   Volume2,
@@ -23,6 +24,7 @@ const CallControls = ({
   onToggleScreenShare,
   isAudioEnabled,
   isVideoEnabled,
+  isScreenSharing = false,
   isInCall,
   showVideo = true,
   showScreenShare = true,
@@ -57,7 +59,13 @@ const CallControls = ({
           type="button"
           onClick={onToggleVideo}
           className={`call-control-btn ${!isVideoEnabled ? 'active-off' : ''}`}
-          title={isVideoEnabled ? 'Turn off camera' : 'Turn on camera'}
+          title={
+            isScreenSharing
+              ? 'Stop screen share'
+              : isVideoEnabled
+                ? 'Turn off camera'
+                : 'Turn on camera'
+          }
         >
           {isVideoEnabled ? <Video size={20} /> : <VideoOff size={20} />}
         </button>
@@ -67,10 +75,10 @@ const CallControls = ({
         <button
           type="button"
           onClick={onToggleScreenShare}
-          className="call-control-btn"
-          title="Share screen"
+          className={`call-control-btn ${isScreenSharing ? 'active-on' : ''}`}
+          title={isScreenSharing ? 'Stop sharing screen' : 'Share screen'}
         >
-          <MonitorUp size={20} />
+          {isScreenSharing ? <MonitorOff size={20} /> : <MonitorUp size={20} />}
         </button>
       )}
 

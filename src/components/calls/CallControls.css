@@ -35,6 +35,14 @@
   background-color: #c03537;
 }
 
+.call-control-btn.active-on {
+  background-color: #3ba55d;
+}
+
+.call-control-btn.active-on:hover {
+  background-color: #2d8a4e;
+}
+
 .call-control-btn.disconnect-btn {
   width: auto;
   min-width: 44px;

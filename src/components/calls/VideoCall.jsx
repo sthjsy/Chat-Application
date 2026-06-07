@@ -11,10 +11,11 @@ const VideoCall = () => {
     endCall,
     toggleAudio,
     toggleVideo,
+    toggleScreenShare,
     localStream,
     remoteStream,
     isAudioMuted,
-    isVideoMuted,
+    isScreenSharing,
   } = useCall();
   const { currentUser } = useAuth();
   const [duration, setDuration] = useState('00:00');
@@ -31,8 +32,19 @@ const VideoCall = () => {
 
   const localName = currentUser?.fullName || currentUser?.username || 'You';
 
-  const localHasVideo = localStream?.getVideoTracks?.().length > 0;
-  const remoteHasVideo = remoteStream?.getVideoTracks?.().length > 0;
+  const isLocalVideoActive = useMemo(() => {
+    if (!localStream) return false;
+    return localStream
+      .getVideoTracks()
+      .some((track) => track.enabled && track.readyState === 'live');
+  }, [localStream]);
+
+  const remoteHasVideo = useMemo(() => {
+    if (!remoteStream) return false;
+    return remoteStream
+      .getVideoTracks()
+      .some((track) => track.enabled && track.readyState === 'live');
+  }, [remoteStream]);
 
   const participants = useMemo(
     () => [
@@ -41,7 +53,7 @@ const VideoCall = () => {
         name: localName,
         isLocal: true,
         isAudioEnabled: !isAudioMuted,
-        isVideoEnabled: localHasVideo && !isVideoMuted,
+        isVideoEnabled: isLocalVideoActive,
         videoStream: localStream,
       },
       {
@@ -59,11 +71,10 @@ const VideoCall = () => {
       remoteName,
       remoteParticipant?.id,
       isAudioMuted,
-      isVideoMuted,
+      isLocalVideoActive,
+      remoteHasVideo,
       localStream,
       remoteStream,
-      localHasVideo,
-      remoteHasVideo,
     ]
   );
 
@@ -99,7 +110,10 @@ const VideoCall = () => {
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#111' }}>
       <div style={{ padding: '8px', textAlign: 'center', color: '#fff', fontSize: '13px', background: '#1e1f22' }}>
         {remoteName} — {duration}
-        {activeCall.status !== 'connected' && (
+        {isScreenSharing && (
+          <span style={{ marginLeft: '8px', color: '#3ba55d' }}>(Sharing screen)</span>
+        )}
+        {!isScreenSharing && activeCall.status !== 'connected' && (
           <span style={{ marginLeft: '8px', color: '#f0b232', textTransform: 'capitalize' }}>
             ({activeCall.status})
           </span>
@@ -119,11 +133,12 @@ const VideoCall = () => {
           onEnd={endCall}
           onToggleAudio={toggleAudio}
           onToggleVideo={toggleVideo}
+          onToggleScreenShare={toggleScreenShare}
           onToggleChat={() => {}}
           onToggleParticipants={() => {}}
-          onToggleScreenShare={() => {}}
           isAudioEnabled={!isAudioMuted}
-          isVideoEnabled={localHasVideo && !isVideoMuted}
+          isVideoEnabled={isLocalVideoActive}
+          isScreenSharing={isScreenSharing}
           isInCall
           showChat={false}
           showParticipants={false}

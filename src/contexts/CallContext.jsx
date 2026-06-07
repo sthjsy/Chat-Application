@@ -37,6 +37,7 @@ export const CallProvider = ({ children }) => {
   const [mediaPermission, setMediaPermission] = useState(false);
   const [isAudioMuted, setIsAudioMuted] = useState(false);
   const [isVideoMuted, setIsVideoMuted] = useState(false);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isCallMinimized, setIsCallMinimized] = useState(false);
 
   const activeCallRef = useRef(null);
@@ -48,6 +49,10 @@ export const CallProvider = ({ children }) => {
   const remoteStreamRef = useRef(null);
   const subscriptionsRef = useRef([]);
   const offerProcessingRef = useRef(false);
+  const cameraVideoTrackRef = useRef(null);
+  const screenShareTrackRef = useRef(null);
+  const isScreenSharingRef = useRef(false);
+  const isVideoMutedRef = useRef(false);
 
   const resolveCallType = useCallback((callOrType) => {
     if (!callOrType) return 'audio';
@@ -89,6 +94,73 @@ export const CallProvider = ({ children }) => {
     return navigator.mediaDevices.getUserMedia({ audio: true, video: false });
   }, []);
 
+  const acquireCameraTrack = useCallback(async () => {
+    const videoConstraints = [
+      { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+      { facingMode: 'user' },
+      true,
+    ];
+
+    for (const videoConstraint of videoConstraints) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: videoConstraint,
+        });
+        const track = stream.getVideoTracks()[0];
+        if (track) {
+          return track;
+        }
+      } catch (error) {
+        console.warn(`${LOG_PREFIX} Camera track constraint failed:`, videoConstraint, error);
+      }
+    }
+
+    throw new Error('Could not access camera');
+  }, []);
+
+  const getOrCreateVideoSender = useCallback((peerConnection) => {
+    const existingSender = peerConnection
+      .getSenders()
+      .find((sender) => sender.track?.kind === 'video');
+    if (existingSender) return existingSender;
+
+    const videoTransceiver = peerConnection.getTransceivers().find(
+      (tc) => tc.sender.track?.kind === 'video' || tc.receiver.track?.kind === 'video'
+    );
+    if (videoTransceiver) return videoTransceiver.sender;
+
+    return peerConnection.addTransceiver('video', { direction: 'sendrecv' }).sender;
+  }, []);
+
+  const refreshLocalStreamState = useCallback(() => {
+    const stream = localStreamRef.current;
+    if (!stream) return;
+    setLocalStream(new MediaStream(stream.getTracks()));
+  }, []);
+
+  const updateLocalVideoTrack = useCallback(async (newVideoTrack) => {
+    const peerConnection = peerConnectionRef.current;
+    const stream = localStreamRef.current;
+    if (!peerConnection || !stream) return;
+
+    [...stream.getVideoTracks()].forEach((track) => {
+      stream.removeTrack(track);
+      if (track === screenShareTrackRef.current) {
+        track.stop();
+        screenShareTrackRef.current = null;
+      }
+    });
+
+    if (newVideoTrack) {
+      stream.addTrack(newVideoTrack);
+    }
+
+    const sender = getOrCreateVideoSender(peerConnection);
+    await sender.replaceTrack(newVideoTrack || null);
+    refreshLocalStreamState();
+  }, [getOrCreateVideoSender, refreshLocalStreamState]);
+
   useEffect(() => {
     activeCallRef.current = activeCall;
   }, [activeCall]);
@@ -96,6 +168,10 @@ export const CallProvider = ({ children }) => {
   useEffect(() => {
     incomingCallRef.current = incomingCall;
   }, [incomingCall]);
+
+  useEffect(() => {
+    isVideoMutedRef.current = isVideoMuted;
+  }, [isVideoMuted]);
 
   const getRemoteUsername = useCallback((call) => {
     if (!call) return null;
@@ -121,6 +197,12 @@ export const CallProvider = ({ children }) => {
   };
 
   const stopLocalMedia = useCallback(() => {
+    screenShareTrackRef.current?.stop();
+    screenShareTrackRef.current = null;
+    cameraVideoTrackRef.current = null;
+    isScreenSharingRef.current = false;
+    setIsScreenSharing(false);
+
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
     localStreamRef.current = null;
     setLocalStream(null);
@@ -262,13 +344,19 @@ export const CallProvider = ({ children }) => {
       localStreamRef.current = stream;
       setLocalStream(stream);
       setIsAudioMuted(false);
-      setIsVideoMuted(!stream.getVideoTracks().length);
-      stream.getTracks().forEach((track) => peerConnection.addTrack(track, stream));
 
-      const wantsVideo = isVideoCallType(callType);
-      if (wantsVideo && stream.getVideoTracks().length === 0) {
-        peerConnection.addTransceiver('video', { direction: 'recvonly' });
-      }
+      const initialVideoTrack = stream.getVideoTracks()[0];
+      cameraVideoTrackRef.current = initialVideoTrack || null;
+      setIsVideoMuted(!initialVideoTrack);
+      isScreenSharingRef.current = false;
+      setIsScreenSharing(false);
+
+       stream.getTracks().forEach((track) => peerConnection.addTrack(track, stream));
+
+       const wantsVideo = isVideoCallType(callType);
+       if (wantsVideo && stream.getVideoTracks().length === 0) {
+         peerConnection.addTransceiver('video', { direction: 'sendrecv' });
+       }
 
       attachPeerConnectionHandlers(peerConnection, { sessionId, target });
 
@@ -611,13 +699,115 @@ export const CallProvider = ({ children }) => {
     setIsAudioMuted(nextMuted);
   };
 
-  const toggleVideo = () => {
-    const tracks = localStreamRef.current?.getVideoTracks() || [];
-    const nextMuted = tracks.length > 0 ? tracks[0].enabled : false;
-    tracks.forEach((track) => {
-      track.enabled = !nextMuted;
-    });
-    setIsVideoMuted(nextMuted);
+  const stopScreenShare = useCallback(async () => {
+    if (!isScreenSharingRef.current) return;
+
+    screenShareTrackRef.current?.stop();
+    screenShareTrackRef.current = null;
+    isScreenSharingRef.current = false;
+    setIsScreenSharing(false);
+
+    const cameraTrack = cameraVideoTrackRef.current;
+    if (cameraTrack && cameraTrack.readyState === 'live' && !isVideoMutedRef.current) {
+      cameraTrack.enabled = true;
+      await updateLocalVideoTrack(cameraTrack);
+    } else {
+      await updateLocalVideoTrack(null);
+    }
+  }, [updateLocalVideoTrack]);
+
+  const toggleVideo = async () => {
+    const stream = localStreamRef.current;
+    const peerConnection = peerConnectionRef.current;
+    if (!stream || !peerConnection) return;
+
+    if (isScreenSharingRef.current) {
+      await stopScreenShare();
+      return;
+    }
+
+    let cameraTrack = cameraVideoTrackRef.current;
+    if (cameraTrack && cameraTrack.readyState !== 'live') {
+      cameraTrack = null;
+      cameraVideoTrackRef.current = null;
+    }
+
+    if (!cameraTrack) {
+      cameraTrack = stream
+        .getVideoTracks()
+        .find((track) => track !== screenShareTrackRef.current && track.readyState === 'live');
+    }
+
+    if (cameraTrack) {
+      const willEnable = !cameraTrack.enabled;
+      cameraTrack.enabled = willEnable;
+      setIsVideoMuted(!willEnable);
+
+      const sender = getOrCreateVideoSender(peerConnection);
+      await sender.replaceTrack(willEnable ? cameraTrack : null);
+      refreshLocalStreamState();
+      return;
+    }
+
+    try {
+      const newTrack = await acquireCameraTrack();
+      cameraVideoTrackRef.current = newTrack;
+      newTrack.enabled = true;
+      await updateLocalVideoTrack(newTrack);
+      setIsVideoMuted(false);
+      console.info(`${LOG_PREFIX} Camera turned on mid-call`);
+    } catch (error) {
+      console.error(`${LOG_PREFIX} Failed to enable camera:`, error);
+      alert('Could not turn on camera. Please allow camera access and try again.');
+    }
+  };
+
+  const toggleScreenShare = async () => {
+    const stream = localStreamRef.current;
+    const peerConnection = peerConnectionRef.current;
+    if (!stream || !peerConnection) return;
+
+    if (isScreenSharingRef.current) {
+      await stopScreenShare();
+      return;
+    }
+
+    try {
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { cursor: 'always' },
+        audio: false,
+      });
+      const screenTrack = screenStream.getVideoTracks()[0];
+      if (!screenTrack) {
+        screenStream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+
+      const liveCamera = stream
+        .getVideoTracks()
+        .find((track) => track !== screenShareTrackRef.current && track.readyState === 'live');
+
+      if (liveCamera) {
+        cameraVideoTrackRef.current = liveCamera;
+        liveCamera.enabled = false;
+      }
+
+      screenTrack.onended = () => {
+        stopScreenShare();
+      };
+
+      screenShareTrackRef.current = screenTrack;
+      isScreenSharingRef.current = true;
+      setIsScreenSharing(true);
+      await updateLocalVideoTrack(screenTrack);
+      setIsVideoMuted(false);
+      console.info(`${LOG_PREFIX} Screen sharing started`);
+    } catch (error) {
+      if (error?.name !== 'NotAllowedError') {
+        console.error(`${LOG_PREFIX} Screen share failed:`, error);
+        alert('Could not share screen. Please try again.');
+      }
+    }
   };
 
   const value = {
@@ -627,11 +817,13 @@ export const CallProvider = ({ children }) => {
     remoteStream,
     isAudioMuted,
     isVideoMuted,
+    isScreenSharing,
     startCall,
     answerCall,
     endCall,
     toggleAudio,
     toggleVideo,
+    toggleScreenShare,
     isCallMinimized,
     setIsCallMinimized,
   };

@@ -1,7 +1,7 @@
 export const WebSocketConfig = {
     // Base WebSocket URL
-    WS_URL: 'ws://localhost:8082/ws',
-    // WS_URL: 'ws://15.207.20.44:8080/ws',
+    WS_URL: 'ws://192.168.1.111:8082/ws',
+    // WS_URL: 'ws://localhost:8082/ws',
 
     // WebSocket Endpoints
     ENDPOINTS: {

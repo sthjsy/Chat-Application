@@ -22,8 +22,8 @@ function createWindow() {
 
     // Load the app
     const startUrl = isDev 
-      ? 'http://localhost:3000' 
-      // ? 'http://192.168.0.119:3000' 
+      // ? 'http://localhost:3000' 
+      ? 'http://192.168.1.111:3000' 
       : `file://${path.join(__dirname, '../build/index.html')}`;
     
     console.log('Loading URL:', startUrl);
